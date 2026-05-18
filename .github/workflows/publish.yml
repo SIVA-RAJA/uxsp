@@ -1,0 +1,134 @@
+name: Publish & CI
+
+on:
+  push:
+    branches: [ main, dev ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [ published ]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Lint & Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install .[dev]
+
+      - name: Run Ruff Linter
+        run: |
+          ruff check uxsp
+
+      - name: Run Mypy Type Checker
+        run: |
+          mypy uxsp
+
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ '3.11', '3.12' ]
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Cache liboqs C library
+        id: cache-liboqs
+        uses: actions/cache@v4
+        with:
+          path: ~/liboqs-install
+          key: ${{ runner.os }}-liboqs-v0.10.1-${{ hashFiles('pyproject.toml') }}
+
+      - name: Compile and Install liboqs (if cache miss)
+        if: steps.cache-liboqs.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build git libssl-dev
+          git clone --depth=1 --branch 0.10.1 https://github.com/open-quantum-safe/liboqs.git
+          cd liboqs
+          mkdir build && cd build
+          cmake -GNinja -DOQS_USE_OPENSSL=ON -DBUILD_SHARED_LIBS=ON -DCMAKE_INSTALL_PREFIX=$HOME/liboqs-install ..
+          ninja
+          ninja install
+
+      - name: Discover and Export liboqs paths
+        run: |
+          SO_PATH=$(find $HOME/liboqs-install -name "liboqs.so" | head -n 1)
+          if [ -z "$SO_PATH" ]; then
+            echo "Error: liboqs.so not found in $HOME/liboqs-install"
+            exit 1
+          fi
+          echo "Successfully discovered liboqs.so at: $SO_PATH"
+          echo "LIBOQS_INSTALL_PATH=$SO_PATH" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=$(dirname $SO_PATH):$LD_LIBRARY_PATH" >> $GITHUB_ENV
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install .[dev]
+
+      - name: Run Test Suite (pytest)
+        run: |
+          pytest
+
+  publish:
+    name: Build & Publish to PyPI
+    needs: [ lint, test ]
+    if: >-
+      (github.event_name == 'release' && github.event.action == 'published') ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install packaging tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build
+
+      - name: Build Source and Wheel distributions
+        run: |
+          python -m build
+
+      - name: Archive build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: uxsp-dist-${{ github.sha }}
+          path: dist/
+          retention-days: 7
+
+      - name: Publish Package to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
