@@ -1,0 +1,145 @@
+[build-system]
+requires      = ["setuptools>=68.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name            = "uxsp"
+version         = "0.1.1"
+description     = "Universal Exchange Security Protocol — Hybrid Post-Quantum Secure Messaging"
+readme          = "README.md"
+requires-python = ">=3.11"
+license         = { file = "LICENSE" }
+authors         = [
+    { name = "SIVA RAJA S", email = "sivaraja5401@gmail.com" }
+]
+keywords = [
+    "security", "cryptography", "post-quantum", "pqc",
+    "kyber", "dilithium", "hybrid-encryption", "secure-messaging",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security :: Cryptography",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Operating System :: POSIX",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",   # experimental; falls back to msvcrt on Windows
+]
+
+# Minimum bounds instead of exact pins.
+#
+# Exact pins (==) cause pip dependency conflicts when UXSP is installed
+# alongside any other package that needs a different version of the same
+# library. A public package must use lower bounds (>=) so pip can resolve
+# a compatible set.
+#
+# Lower-bound rationale:
+#   cryptography  >= 41.0.0  — post-CVE baseline; X25519, Ed25519, AES-GCM,
+#                              HKDF all stable and audited from this release.
+#   liboqs-python >= 0.10.0  — ML-KEM-768 and ML-DSA-65 algorithm names
+#                              stabilised at this version (NIST standard naming).
+#   argon2-cffi   >= 21.3.0  — Argon2id support stable; security fixes
+#                              for side-channel issues present before 21.x.
+dependencies = [
+    "cryptography  >= 41.0.0",
+    "liboqs-python >= 0.10.0",
+    "argon2-cffi   >= 21.3.0",
+]
+
+[project.optional-dependencies]
+
+# Redis — distributed replay protection and rate limiting across servers.
+# redis >= 4.0.0 required for atomic SET NX EX used in RedisNonceStore.
+redis    = ["redis >= 4.0.0"]
+
+# Postgres — durable nonce audit log via PostgresNonceStore.
+postgres = ["psycopg2-binary >= 2.9.0"]
+
+# Development tools — locked to exact versions for reproducible CI.
+# These are NOT installed when a user runs `pip install uxsp`.
+dev = [
+    "pytest          == 9.0.3",
+    "pytest-cov      == 7.1.0",
+    "fakeredis       == 2.35.1",
+    "mypy            == 1.20.2",
+    "ruff            == 0.15.12",
+]
+
+# Documentation build.
+docs = [
+    "Sphinx                    == 9.1.0",
+    "furo                      == 2025.12.19",
+    "sphinx-autodoc-typehints  == 3.10.2",
+]
+
+[project.urls]
+Repository    = "https://github.com/SIVA-RAJA/uxsp"
+Documentation = "https://github.com/SIVA-RAJA/uxsp#readme"
+"Bug Tracker" = "https://github.com/SIVA-RAJA/uxsp/issues"
+Changelog     = "https://github.com/SIVA-RAJA/uxsp/blob/main/CHANGELOG.md"
+
+[project.scripts]
+uxsp = "uxsp.cli:main"
+
+# ── Package discovery ─────────────────────────────────────────────────────────
+
+[tool.setuptools.packages.find]
+where   = ["."]
+include = ["uxsp*"]
+exclude = ["tests*", "docs*"]
+
+[tool.setuptools.package-data]
+uxsp = ["py.typed"]
+
+# ── Ruff (linter + formatter) ─────────────────────────────────────────────────
+
+[tool.ruff]
+line-length    = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+# ── Mypy (type checker) ───────────────────────────────────────────────────────
+
+[tool.mypy]
+python_version         = "3.11"
+strict                 = true
+ignore_missing_imports = true
+
+# ── Pyright (type checker) ────────────────────────────────────────────────────
+
+[tool.pyright]
+include = ["uxsp"]
+exclude = ["**/node_modules", "**/__pycache__"]
+typeCheckingMode = "standard"
+pythonVersion = "3.11"
+pythonPlatform = "Linux"
+reportMissingImports = true
+reportMissingTypeStubs = false
+reportUnknownParameterType = true
+
+# ── Pytest ────────────────────────────────────────────────────────────────────
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts   = "-v --tb=short --cov=uxsp --cov-report=term-missing"
+
+# Suppress the liboqs version mismatch warning (liboqs C library vs
+# liboqs-python wrapper may differ by patch version — this is harmless).
+filterwarnings = [
+    "ignore::UserWarning:oqs",
+]
+
+# ── Coverage ──────────────────────────────────────────────────────────────────
+
+[tool.coverage.run]
+source = ["uxsp"]
+#omit   = ["tests/*", "uxsp/cli.py"]

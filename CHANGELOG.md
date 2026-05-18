@@ -1,0 +1,65 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
+## [0.1.1] - 2026-05-18
+
+This release introduces major feature expansions for handling structured application payloads and large files (including documents, videos, photos, images, and other media), refactors replay protection to support dependency injection and two-stage validation, and fully restructures the test suite to reach a verified **100% test coverage** benchmark.
+
+### Added
+- **Structured Messaging (`uxsp.core.payload`)**:
+  - Added the `UXSPPayload` container class to safely pack structured application messages.
+  - Support for `TEXT` (UTF-8 strings), `BINARY` (raw bytes), and `FILE` (payload body with a preserved filename and content type, allowing users to send files, photos, videos, documents, and other media) payload kinds.
+  - Provided high-level convenience packing and unpacking APIs: `pack_text`, `unpack_text`, `pack_file` (with automatic MIME type and filename detection for photos, videos, and other files), `unpack_to_file`, and `pack_binary`.
+  - Added binary serialization and format validation with a secure `UXSP-PAYLOAD-1` magic header and length-prefixed JSON metadata.
+- **Large-Payload Chunking (`uxsp.core.chunking`)**:
+  - Added the `UXSPChunk` frozen dataclass for splitting large payloads exceeding standard Envelope size limits (default 64 KiB)—such as high-resolution photos, large videos, or documents—into individually encrypted and signed chunks.
+  - Implemented `create_chunked_transfer` and `reassemble_chunked_transfer` to fragment and safely reconstruct arbitrary binary data.
+  - Created convenience text-chunking wrappers `create_chunked_text` and `decode_chunked_text`.
+  - Enforced strong integrity checks by requiring every chunk to carry both its individual SHA-256 hash and the final reassembled file's SHA-256 hash, verifying all pieces upon reassembly.
+- **Modular Test Suite & 100% Coverage**:
+  - Deconstructed the monolithic `tests/test.py` from v0.1.0 into a clean, modular hierarchy under `tests/`.
+  - Created distinct, focused test scripts: `tests/cli_test.py`, `tests/core/*_test.py`, `tests/crypto/*_test.py`, `tests/storage/*_test.py`, and `tests/transport/*_test.py`.
+  - Achieved a strict **100% statement and branch coverage** across all source files.
+- **Static Typing Configurations**:
+  - Added a dedicated [tool.pyright] configuration section to `pyproject.toml` to support Pyright standard-mode typing validation alongside Mypy.
+
+### Changed
+- **Replay Protection Refactoring (`uxsp.core.replay`)**:
+  - Introduced the structural protocol `DefaultReplayGuard` to support dependency injection. Developers can now implement custom replay guards (e.g., distributed guards, memory-optimized databases) seamlessly.
+  - Enhanced `ReplayGuard` with advanced stages for two-step protocols:
+    - `check_freshness` — Verifies only the timestamp window (cheap, non-blocking check).
+    - `precheck` — Diagnostics-level seen check prior to running computationally expensive cryptographic operations.
+    - `commit` — Atomic verification and registration to prevent race conditions during concurrent decrypts.
+    - `check_and_commit` / `check_and_open` — Robust one-shot APIs.
+- **Flexible Dependency Bounds (`pyproject.toml`)**:
+  - Converted core dependencies (`cryptography`, `liboqs-python`, `argon2-cffi`) from exact version pins (`==`) to safe minimum lower bounds (`>=`). This eliminates dependency conflicts for packages consuming UXSP as a library.
+  - Converted optional dependencies (`redis`, `psycopg2-binary`) to lower bounds (`>= 4.0.0` and `>= 2.9.0` respectively).
+- **Metadata and Discoverability**:
+  - Updated python version requirements in MyPy and Pyright to `"3.11"` to match core specifications.
+  - Registered `Documentation`, `Bug Tracker`, and `Changelog` links in package metadata.
+  - Verified and adjusted Windows experimental classifiers for `msvcrt` fallback compatibility.
+
+---
+
+## [0.1.0] - 2026-05-01
+
+### Added
+- **Initial Public Beta Release** of the Universal Exchange Security Protocol (UXSP).
+- **Hybrid Post-Quantum Cryptography**:
+  - Quantum-resistant asymmetric key exchange using **ML-KEM-768** mixed with classical **X25519** ECDH via HKDF-SHA256.
+  - Dual signature identity verification utilizing **ML-DSA-65** coupled with classical **Ed25519**.
+- **Secure Transport Layers**:
+  - Length-prefixed framing and session lifecycle state-machine for stateful WebSockets.
+  - High-performance, stateless header-bound envelope handling for HTTP.
+- **Storage Infrastructure**:
+  - cross-process File and Memory key stores.
+  - Memory, Redis, and PostgreSQL nonce storage backends enforcing atomic fail-closed replay protection.
+- **Enterprise Controls**:
+  - Per-entity rate limiting and token-bucket sliding windows to guard expensive PQC operations.
+  - Sequence-number-enforced ordering to prevent out-of-order session injection attacks.
