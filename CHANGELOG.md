@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.2] - 2026-05-19
+
+### Changed
+- Bumped package version to 0.1.2
+
 ## [0.1.1] - 2026-05-18
 
 This release introduces major feature expansions for handling structured application payloads and large files (including documents, videos, photos, images, and other media), refactors replay protection to support dependency injection and two-stage validation, and fully restructures the test suite to reach a verified **100% test coverage** benchmark.

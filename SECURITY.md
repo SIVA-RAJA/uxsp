@@ -168,4 +168,4 @@ researchers acting within this policy.
 
 ---
 
-*Last updated: 2026 — UXSP v0.1.1*
+*Last updated: 2026 — UXSP v0.1.2*

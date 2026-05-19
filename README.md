@@ -4,7 +4,7 @@
 [![Python: 3.11+](https://img.shields.io/badge/Python-3.11+-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Tests: passed](https://img.shields.io/badge/Tests-all%20passed-brightgreen)]()
-[![Version: 0.1.1](https://img.shields.io/badge/Version-0.1.1-orange)]()
+[![Version: 0.1.2](https://img.shields.io/badge/Version-0.1.2-orange)]()
 
 **UXSP** is an enterprise-grade, **hybrid post-quantum secure messaging protocol** for Python. It is designed to safeguard communications against both classical and quantum adversaries—specifically targeting the **"harvest now, decrypt later" (HNDL)** attack vector, where adversaries capture and store encrypted communications today with the intent to decrypt them once cryptographically relevant quantum computers (CRQCs) become available.
 
@@ -899,4 +899,4 @@ UXSP is open-source software licensed under the terms of the **MIT License**. Fo
 
 ---
 
-*UXSP v0.1.1 · Python 3.11+ · Maintained by SIVA RAJA S*
+*UXSP v0.1.2 · Python 3.11+ · Maintained by SIVA RAJA S*

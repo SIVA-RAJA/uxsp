@@ -198,7 +198,7 @@ def _version(_args: argparse.Namespace) -> None:
     """
     Handle the 'version' sub-command.
 
-    Prints the installed uxsp package version (e.g. 'uxsp 0.1.1') to stdout.
+    Prints the installed uxsp package version (e.g. 'uxsp 0.1.2') to stdout.
     """
     from uxsp import __version__
 
