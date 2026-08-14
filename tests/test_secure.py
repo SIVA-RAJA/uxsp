@@ -865,7 +865,7 @@ class TestConfigurationAndPolymorphicDispatch:
         # 1. From dict
         assert ReceiveText(alice.entity_id, package=pkg1.to_dict()) == "Resolve test 1"
 
-        # 2. From JSON string
+        # 2. From JSON string (including long JSON string)
         assert ReceiveText(alice.entity_id, package=pkg2.to_json()) == "Resolve test 2"
 
         # 3. From file
@@ -876,6 +876,28 @@ class TestConfigurationAndPolymorphicDispatch:
         # 4. Invalid input type
         with pytest.raises(SecureReceiveError, match="Cannot resolve package"):
             ReceiveText(alice.entity_id, package=12345)
+
+        # 5. Non-existent string path / string with null byte / very long string not json
+        with pytest.raises(SecureReceiveError, match="Package file not found"):
+            ReceiveText(alice.entity_id, package="non_existent_file.json")
+
+        with pytest.raises(SecureReceiveError, match="Package file not found"):
+            ReceiveText(alice.entity_id, package="bad_path\x00with_null.json")
+
+        with pytest.raises(SecureReceiveError, match="Package file not found"):
+            ReceiveText(alice.entity_id, package="X" * 5000)
+
+        # 6. Test _safe_is_file directly
+        assert not uxsp.secure._safe_is_file(12345)
+        assert not uxsp.secure._safe_is_file("bad_path\x00with_null.json")
+        assert not uxsp.secure._safe_is_file("X" * 5000)
+        assert uxsp.secure._safe_is_file(pkg_file)
+
+    def test_safe_is_file_exception_handling(self, monkeypatch):
+        def mock_is_file(_self):
+            raise OSError("Simulated filesystem error")
+        monkeypatch.setattr(Path, "is_file", mock_is_file)
+        assert not uxsp.secure._safe_is_file("some_file.txt")
 
     def test_polymorphic_file_extensions_and_invalid(self, alice_and_bob, temp_dir):
         alice, bob = alice_and_bob

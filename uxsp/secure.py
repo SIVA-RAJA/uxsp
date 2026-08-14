@@ -150,9 +150,9 @@ class SecurePackage:
     @classmethod
     def from_file(cls, file_path: str | Path) -> SecurePackage:
         """Load package from a JSON file."""
-        p = Path(file_path)
-        if not p.exists() or not p.is_file():
+        if not _safe_is_file(file_path):
             raise SecureReceiveError(f"Package file not found: {file_path}")
+        p = Path(file_path)
         return cls.from_json(p.read_text(encoding="utf-8"))
 
 
@@ -321,22 +321,33 @@ def _normalize_id(entity_id: str | int) -> str:
     return norm
 
 
+def _safe_is_file(path_val: Any) -> bool:
+    """Safely check if path_val is an existing file without raising OSError on long strings."""
+    if not isinstance(path_val, (str, Path)):
+        return False
+    try:
+        p = Path(path_val)
+        return p.is_file()
+    except (OSError, ValueError):
+        return False
+
+
 def _resolve_package_input(package_input: Any) -> SecurePackage:
-    """Resolve a SecurePackage from diverse inputs (SecurePackage, dict, str, Path)."""
+    """Resolve a SecurePackage from diverse inputs (SecurePackage, dict, str, Path, bytes)."""
     if isinstance(package_input, SecurePackage):
         return package_input
     if isinstance(package_input, dict):
         return SecurePackage.from_dict(package_input)
-    if isinstance(package_input, (str, Path)):
-        p = Path(package_input)
-        if p.exists() and p.is_file():
-            return SecurePackage.from_file(p)
-        if isinstance(package_input, str) and package_input.strip().startswith("{"):
-            return SecurePackage.from_json(package_input)
-        if not p.exists():
-            raise SecureReceiveError(f"Package file not found: {package_input}")
     if isinstance(package_input, bytes):
         return SecurePackage.from_json(package_input)
+    if isinstance(package_input, str):
+        trimmed = package_input.strip()
+        if trimmed.startswith("{"):
+            return SecurePackage.from_json(trimmed)
+    if isinstance(package_input, (str, Path)):
+        if _safe_is_file(package_input):
+            return SecurePackage.from_file(Path(package_input))
+        raise SecureReceiveError(f"Package file not found: {package_input}")
     raise SecureReceiveError(f"Cannot resolve package from input of type {type(package_input).__name__}")
 
 
@@ -480,9 +491,9 @@ def SendVideo(
 ) -> SecurePackage:
     """Encrypt and send a video to receiver_id."""
     if isinstance(video_path_or_bytes, (str, Path)):
-        p = Path(video_path_or_bytes)
-        if not p.exists() or not p.is_file():
+        if not _safe_is_file(video_path_or_bytes):
             raise SecureSendError(f"File not found: {video_path_or_bytes}")
+        p = Path(video_path_or_bytes)
         fname = filename or p.name or "video.mp4"
         ctype, _ = mimetypes.guess_type(str(p))
         packed = pack_file(p, content_type=ctype or "video/mp4")
@@ -528,9 +539,9 @@ def SendAudio(
 ) -> SecurePackage:
     """Encrypt and send audio to receiver_id."""
     if isinstance(audio_path_or_bytes, (str, Path)):
-        p = Path(audio_path_or_bytes)
-        if not p.exists() or not p.is_file():
+        if not _safe_is_file(audio_path_or_bytes):
             raise SecureSendError(f"File not found: {audio_path_or_bytes}")
+        p = Path(audio_path_or_bytes)
         fname = filename or p.name or "audio.mp3"
         ctype, _ = mimetypes.guess_type(str(p))
         packed = pack_file(p, content_type=ctype or "audio/mpeg")
@@ -572,9 +583,9 @@ def SendPhoto(
 ) -> SecurePackage:
     """Encrypt and send a photo/image to receiver_id."""
     if isinstance(photo_path_or_bytes, (str, Path)):
-        p = Path(photo_path_or_bytes)
-        if not p.exists() or not p.is_file():
+        if not _safe_is_file(photo_path_or_bytes):
             raise SecureSendError(f"File not found: {photo_path_or_bytes}")
+        p = Path(photo_path_or_bytes)
         fname = filename or p.name or "photo.jpg"
         ctype, _ = mimetypes.guess_type(str(p))
         packed = pack_file(p, content_type=ctype or "image/jpeg")
@@ -659,9 +670,9 @@ def SendDocument(
 ) -> SecurePackage:
     """Encrypt and send a document to receiver_id."""
     if isinstance(doc_path_or_bytes, (str, Path)):
-        p = Path(doc_path_or_bytes)
-        if not p.exists() or not p.is_file():
+        if not _safe_is_file(doc_path_or_bytes):
             raise SecureSendError(f"File not found: {doc_path_or_bytes}")
+        p = Path(doc_path_or_bytes)
         fname = filename or p.name or "document.bin"
         ctype, _ = mimetypes.guess_type(str(p))
         packed = pack_file(p, content_type=ctype or "application/octet-stream")
@@ -707,9 +718,9 @@ def SendPDF(
 ) -> SecurePackage:
     """Encrypt and send a PDF file to receiver_id."""
     if isinstance(pdf_path_or_bytes, (str, Path)):
-        p = Path(pdf_path_or_bytes)
-        if not p.exists() or not p.is_file():
+        if not _safe_is_file(pdf_path_or_bytes):
             raise SecureSendError(f"File not found: {pdf_path_or_bytes}")
+        p = Path(pdf_path_or_bytes)
         fname = filename or p.name or "document.pdf"
         packed = pack_file(p, content_type="application/pdf")
     elif isinstance(pdf_path_or_bytes, (bytes, bytearray)):
@@ -759,9 +770,9 @@ def SendFile(
         )
         packed = payload.to_bytes()
     elif isinstance(file_path_or_bytes, (str, Path)):
-        p = Path(file_path_or_bytes)
-        if not p.exists() or not p.is_file():
+        if not _safe_is_file(file_path_or_bytes):
             raise SecureSendError(f"File not found: {file_path_or_bytes}")
+        p = Path(file_path_or_bytes)
         packed = pack_file(p, content_type=content_type)
     else:
         raise SecureSendError("file_path_or_bytes must be a path or bytes.")
@@ -925,9 +936,9 @@ def SendArchive(
 ) -> SecurePackage:
     """Encrypt and send a zip/tar archive to receiver_id."""
     if isinstance(archive_path_or_bytes, (str, Path)):
-        p = Path(archive_path_or_bytes)
-        if not p.exists() or not p.is_file():
+        if not _safe_is_file(archive_path_or_bytes):
             raise SecureSendError(f"File not found: {archive_path_or_bytes}")
+        p = Path(archive_path_or_bytes)
         fname = filename or p.name or "archive.zip"
         ctype, _ = mimetypes.guess_type(str(p))
         packed = pack_file(p, content_type=ctype or "application/zip")
@@ -977,9 +988,9 @@ def SendVoice(
         meta["duration_seconds"] = duration_seconds
 
     if isinstance(voice_path_or_bytes, (str, Path)):
-        p = Path(voice_path_or_bytes)
-        if not p.exists() or not p.is_file():
+        if not _safe_is_file(voice_path_or_bytes):
             raise SecureSendError(f"File not found: {voice_path_or_bytes}")
+        p = Path(voice_path_or_bytes)
         packed = pack_file(p, content_type="audio/ogg")
     elif isinstance(voice_path_or_bytes, (bytes, bytearray)):
         packed = pack_binary(voice_path_or_bytes, filename="voice.ogg", content_type="audio/ogg")
@@ -1139,8 +1150,8 @@ def Send(
             return SendFile(receiver_id, item, output_file=output_file, metadata=metadata)
 
     if isinstance(item, (str, Path)):
-        p = Path(item)
-        if p.exists() and p.is_file():
+        if _safe_is_file(item):
+            p = Path(item)
             ext = p.suffix.lower()
             if ext in {".mp4", ".mkv", ".avi", ".mov", ".webm"}:
                 return SendVideo(receiver_id, p, output_file=output_file, metadata=metadata)
