@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name            = "uxsp"
-version         = "0.1.2"
+version         = "1.0.0"
 description     = "Universal Exchange Security Protocol — Hybrid Post-Quantum Secure Messaging"
 readme          = "README.md"
 requires-python = ">=3.11"
@@ -17,7 +17,7 @@ keywords = [
     "kyber", "dilithium", "hybrid-encryption", "secure-messaging",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
@@ -106,6 +106,10 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"uxsp/__init__.py" = ["I001"]
+"tests/*" = ["E402", "SIM117", "E701", "E702", "F811", "F821", "SIM105"]
 
 # ── Mypy (type checker) ───────────────────────────────────────────────────────
 

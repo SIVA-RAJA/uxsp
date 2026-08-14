@@ -38,7 +38,7 @@ class TestInitPackageNotFound:
     def test_version_fallback_when_package_not_found(self, monkeypatch):
         """
         When importlib.metadata.version() raises PackageNotFoundError the
-        fallback ``__version__ = "0.1.2"`` on line 11 must execute.
+        fallback ``__version__ = "1.0.0"`` on line 11 must execute.
         """
         from importlib.metadata import PackageNotFoundError
 
@@ -48,7 +48,7 @@ class TestInitPackageNotFound:
             orig = sys.modules.pop("uxsp", None)
             try:
                 import uxsp  # noqa: F401 – triggers the except branch
-                assert uxsp.__version__ == "0.1.2"
+                assert uxsp.__version__ == "1.0.0"
             finally:
                 # Restore original module
                 if orig is not None:

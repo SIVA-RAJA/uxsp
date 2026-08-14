@@ -34,8 +34,8 @@ from importlib.metadata import PackageNotFoundError, version
 try:
     __version__ = version("uxsp")
 except PackageNotFoundError:
-    __version__ = "0.1.2"
-__author__ = "UXSP Contributors"
+    __version__ = "1.0.0"
+__author__ = "SIVA RAJA S"
 __license__ = "MIT"
 
 # ─────────────────────────────────────────────
