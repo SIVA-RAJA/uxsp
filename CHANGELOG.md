@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 UXSP 1.0.1 introduces a major developer workflow enhancement by removing global state requirements and manual temp-file plumbing. High-level functions now support direct object passing (`Identity` and `PublicCard`), and `Identity` supports in-memory encrypted serialization for database/session storage in web backends.
 
 ### Added
+
 - **In-Memory Identity Serialization (`uxsp.core.identity`)**:
   - `to_encrypted_json(password)` & `from_encrypted_json(encrypted_json, password)` for serializing/restoring encrypted identity payloads directly in memory (strings or bytes) without disk temporary files.
   - `to_encrypted_dict(password)` & `from_encrypted_dict(payload, password)` dict-based serialization helpers.
@@ -26,6 +27,7 @@ UXSP 1.0.1 introduces a major developer workflow enhancement by removing global 
   - Exported `create_identity`, `export_identity_encrypted`, `import_identity_encrypted`, `hash_password`, and `verify_password` directly in `uxsp`.
 
 ### Changed
+
 - **Application Integration**: Refactored `TharavuXchange` service layer (`uxsp_service.py`) to use the new simplified, stateless APIs and in-memory identity serialization.
 - **Test Coverage**: Achieved verified **100% statement coverage** (3,663 / 3,663 lines) across the entire library with 1,466 passing tests.
 
@@ -36,6 +38,7 @@ UXSP 1.0.1 introduces a major developer workflow enhancement by removing global 
 UXSP 1.0.0 marks the official stable production release of the Universal Exchange Security Protocol, featuring the brand-new **Developer API (`uxsp.secure`)**, end-to-end post-quantum cryptographic security, and verified **100% test coverage** across all 3,590 executable statements.
 
 ### Added
+
 - **Developer Workflow (`uxsp.secure`)**:
   - Implemented high-level `Send*` and `Receive*` functional interfaces that drastically reduce developer boilerplate from 30+ lines to 1-2 intuitive lines of Python.
   - Full polymorphic and strongly typed support for **14 data types**:
@@ -60,6 +63,7 @@ UXSP 1.0.0 marks the official stable production release of the Universal Exchang
   - Direct access to `uxsp.secure.*` and top-level convenient aliases in `uxsp`.
 
 ### Changed
+
 - **Production Status**: Promoted development status classifier from `Beta` to `Development Status :: 5 - Production/Stable`.
 - **Test Suite**: Expanded tests to 1,459 automated regression tests with 100% statement and branch coverage.
 - **Documentation**: Overhauled `README.md` and `SECURITY.md` for v1.0.0 with developer-friendly quickstart guides and comprehensive protocol reference.
@@ -67,6 +71,7 @@ UXSP 1.0.0 marks the official stable production release of the Universal Exchang
 ## [0.1.2] - 2026-05-19
 
 ### Changed
+
 - Bumped package version to 0.1.2
 
 ## [0.1.1] - 2026-05-18
@@ -74,6 +79,7 @@ UXSP 1.0.0 marks the official stable production release of the Universal Exchang
 This release introduces major feature expansions for handling structured application payloads and large files (including documents, videos, photos, images, and other media), refactors replay protection to support dependency injection and two-stage validation, and fully restructures the test suite to reach a verified **100% test coverage** benchmark.
 
 ### Added
+
 - **Structured Messaging (`uxsp.core.payload`)**:
   - Added the `UXSPPayload` container class to safely pack structured application messages.
   - Support for `TEXT` (UTF-8 strings), `BINARY` (raw bytes), and `FILE` (payload body with a preserved filename and content type, allowing users to send files, photos, videos, documents, and other media) payload kinds.
@@ -92,6 +98,7 @@ This release introduces major feature expansions for handling structured applica
   - Added a dedicated [tool.pyright] configuration section to `pyproject.toml` to support Pyright standard-mode typing validation alongside Mypy.
 
 ### Changed
+
 - **Replay Protection Refactoring (`uxsp.core.replay`)**:
   - Introduced the structural protocol `DefaultReplayGuard` to support dependency injection. Developers can now implement custom replay guards (e.g., distributed guards, memory-optimized databases) seamlessly.
   - Enhanced `ReplayGuard` with advanced stages for two-step protocols:
@@ -112,6 +119,7 @@ This release introduces major feature expansions for handling structured applica
 ## [0.1.0] - 2026-05-01
 
 ### Added
+
 - **Initial Public Beta Release** of the Universal Exchange Security Protocol (UXSP).
 - **Hybrid Post-Quantum Cryptography**:
   - Quantum-resistant asymmetric key exchange using **ML-KEM-768** mixed with classical **X25519** ECDH via HKDF-SHA256.

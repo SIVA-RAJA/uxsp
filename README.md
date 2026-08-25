@@ -10,6 +10,7 @@
 **UXSP** is an enterprise-grade, **hybrid post-quantum secure messaging protocol** for Python. It is designed to protect data against both classical supercomputers and future quantum adversaries—specifically defeating the **"harvest now, decrypt later" (HNDL)** attack vector, where attackers capture encrypted traffic today to decrypt it once cryptographically relevant quantum computers (CRQCs) become viable.
 
 Every UXSP communication is protected by **two independent cryptographic layers**:
+
 1. **Classical Layer**: X25519 ECDH (Key Exchange) + Ed25519 (Digital Signatures).
 2. **Post-Quantum Layer**: NIST FIPS 203 ML-KEM-768 (Key Encapsulation) + NIST FIPS 204 ML-DSA-65 (Digital Signatures).
 
@@ -61,6 +62,7 @@ Both layers must be broken simultaneously for an adversary to compromise the sys
 UXSP v1.0.1 introduces a **stateless, developer-first workflow**. You do not need to configure handshakes, cryptographic sessions, or nonce databases manually for standard operations. **Everything can be sent and received in 1-2 lines of Python.**
 
 ### 1. Sender Side
+
 To send an encrypted and quantum-signed asset to a receiver, provide the receiver's Unique ID (`entity_id` / UID) and the asset to send:
 
 ```python
@@ -84,6 +86,7 @@ package = SendLocation("receiver_uid_123", latitude=37.7749, longitude=-122.4194
 ```
 
 ### 2. Receiver Side
+
 To receive and decrypt data, provide the sender's Unique ID and an optional download path:
 
 ```python
@@ -170,22 +173,22 @@ is_valid = uxsp.verify_password(hashed_password, user_password) # True
 
 UXSP supports 14 dedicated data types with typed helpers and automatic MIME detection:
 
-| Data Type | Sender Helper | Receiver Helper | Accepted Input | Decrypted Return Value |
-|---|---|---|---|---|
-| **Video** | `SendVideo(uid, data)` | `ReceiveVideo(uid, download_path=None)` | File path (`str`/`Path`) or `bytes` | `pathlib.Path` (saved file) |
-| **Audio** | `SendAudio(uid, data)` | `ReceiveAudio(uid, download_path=None)` | File path (`str`/`Path`) or `bytes` | `pathlib.Path` (saved file) |
-| **Photo / Image** | `SendPhoto(uid, data)` / `SendImage(...)` | `ReceivePhoto(uid, ...)` / `ReceiveImage(...)` | File path (`str`/`Path`) or `bytes` | `pathlib.Path` (saved file) |
-| **Text** | `SendText(uid, text)` | `ReceiveText(uid)` | `str` | `str` (UTF-8) |
-| **Document** | `SendDocument(uid, data)` / `SendDoc(...)` | `ReceiveDocument(uid, ...)` / `ReceiveDoc(...)` | File path (`str`/`Path`) or `bytes` | `pathlib.Path` (saved file) |
-| **PDF** | `SendPDF(uid, data)` | `ReceivePDF(uid, download_path=None)` | File path (`str`/`Path`) or `bytes` | `pathlib.Path` (saved file) |
-| **File** | `SendFile(uid, data)` | `ReceiveFile(uid, download_path=None)` | File path (`str`/`Path`) or `bytes` | `pathlib.Path` (saved file) |
-| **Binary** | `SendBinary(uid, data)` | `ReceiveBinary(uid, download_path=None)` | `bytes` | `bytes` (raw body) |
-| **JSON** | `SendJSON(uid, data)` | `ReceiveJSON(uid, download_path=None)` | `dict` or `list` | `dict` or `list` |
-| **HTML** | `SendHTML(uid, html)` | `ReceiveHTML(uid, download_path=None)` | `str` (HTML markup) | `str` |
-| **Archive** | `SendArchive(uid, data)` / `SendZip(...)` | `ReceiveArchive(uid, ...)` / `ReceiveZip(...)` | File path (`str`/`Path`) or `bytes` | `pathlib.Path` (saved file) |
-| **Voice** | `SendVoice(uid, data)` | `ReceiveVoice(uid, download_path=None)` | File path (`str`/`Path`) or `bytes` | `pathlib.Path` (saved file) |
-| **Location** | `SendLocation(uid, lat, lon)` | `ReceiveLocation(uid)` | `float`, `float` | `dict` with `latitude`, `longitude` |
-| **Contact** | `SendContact(uid, contact)` | `ReceiveContact(uid)` | `dict` or `str` (vCard / JSON) | `dict` or `str` |
+| Data Type         | Sender Helper                              | Receiver Helper                                 | Accepted Input                      | Decrypted Return Value              |
+| ----------------- | ------------------------------------------ | ----------------------------------------------- | ----------------------------------- | ----------------------------------- |
+| **Video**         | `SendVideo(uid, data)`                     | `ReceiveVideo(uid, download_path=None)`         | File path (`str`/`Path`) or `bytes` | `pathlib.Path` (saved file)         |
+| **Audio**         | `SendAudio(uid, data)`                     | `ReceiveAudio(uid, download_path=None)`         | File path (`str`/`Path`) or `bytes` | `pathlib.Path` (saved file)         |
+| **Photo / Image** | `SendPhoto(uid, data)` / `SendImage(...)`  | `ReceivePhoto(uid, ...)` / `ReceiveImage(...)`  | File path (`str`/`Path`) or `bytes` | `pathlib.Path` (saved file)         |
+| **Text**          | `SendText(uid, text)`                      | `ReceiveText(uid)`                              | `str`                               | `str` (UTF-8)                       |
+| **Document**      | `SendDocument(uid, data)` / `SendDoc(...)` | `ReceiveDocument(uid, ...)` / `ReceiveDoc(...)` | File path (`str`/`Path`) or `bytes` | `pathlib.Path` (saved file)         |
+| **PDF**           | `SendPDF(uid, data)`                       | `ReceivePDF(uid, download_path=None)`           | File path (`str`/`Path`) or `bytes` | `pathlib.Path` (saved file)         |
+| **File**          | `SendFile(uid, data)`                      | `ReceiveFile(uid, download_path=None)`          | File path (`str`/`Path`) or `bytes` | `pathlib.Path` (saved file)         |
+| **Binary**        | `SendBinary(uid, data)`                    | `ReceiveBinary(uid, download_path=None)`        | `bytes`                             | `bytes` (raw body)                  |
+| **JSON**          | `SendJSON(uid, data)`                      | `ReceiveJSON(uid, download_path=None)`          | `dict` or `list`                    | `dict` or `list`                    |
+| **HTML**          | `SendHTML(uid, html)`                      | `ReceiveHTML(uid, download_path=None)`          | `str` (HTML markup)                 | `str`                               |
+| **Archive**       | `SendArchive(uid, data)` / `SendZip(...)`  | `ReceiveArchive(uid, ...)` / `ReceiveZip(...)`  | File path (`str`/`Path`) or `bytes` | `pathlib.Path` (saved file)         |
+| **Voice**         | `SendVoice(uid, data)`                     | `ReceiveVoice(uid, download_path=None)`         | File path (`str`/`Path`) or `bytes` | `pathlib.Path` (saved file)         |
+| **Location**      | `SendLocation(uid, lat, lon)`              | `ReceiveLocation(uid)`                          | `float`, `float`                    | `dict` with `latitude`, `longitude` |
+| **Contact**       | `SendContact(uid, contact)`                | `ReceiveContact(uid)`                           | `dict` or `str` (vCard / JSON)      | `dict` or `str`                     |
 
 ---
 
@@ -291,11 +294,11 @@ Underneath the API, UXSP operates on a dual-layer cryptographic architecture sup
 
 UXSP is pure Python with C-level acceleration provided by **`liboqs`** (Open Quantum Safe).
 
-| Operating System | Support Level | Compilation Toolchain | Linking Strategy |
-|---|---|---|---|
-| **Linux** (Debian/Ubuntu, CentOS/Fedora, Alpine) | **Production-grade (Primary)** | `gcc` / `clang`, CMake, Ninja | `ldconfig` & `/usr/local/lib/liboqs.so` |
-| **macOS** (Apple Silicon M1/M2/M3 & Intel) | **Production-grade (Primary)** | Xcode Command Line Tools, Homebrew, CMake, Ninja | `DYLD_LIBRARY_PATH` & `liboqs.dylib` |
-| **Windows** (10, 11, Server) | **Supported (Stable)** | MSVC (Visual Studio) or MinGW-w64 (MSYS2), CMake | `%PATH%` DLL path or `LIBOQS_INSTALL_PATH` |
+| Operating System                                 | Support Level                  | Compilation Toolchain                            | Linking Strategy                           |
+| ------------------------------------------------ | ------------------------------ | ------------------------------------------------ | ------------------------------------------ |
+| **Linux** (Debian/Ubuntu, CentOS/Fedora, Alpine) | **Production-grade (Primary)** | `gcc` / `clang`, CMake, Ninja                    | `ldconfig` & `/usr/local/lib/liboqs.so`    |
+| **macOS** (Apple Silicon M1/M2/M3 & Intel)       | **Production-grade (Primary)** | Xcode Command Line Tools, Homebrew, CMake, Ninja | `DYLD_LIBRARY_PATH` & `liboqs.dylib`       |
+| **Windows** (10, 11, Server)                     | **Supported (Stable)**         | MSVC (Visual Studio) or MinGW-w64 (MSYS2), CMake | `%PATH%` DLL path or `LIBOQS_INSTALL_PATH` |
 
 ---
 
@@ -306,18 +309,21 @@ Building `liboqs` from source ensures that you have the latest NIST FIPS 203 (ML
 ### 1. Compiling `liboqs` on Linux
 
 #### Ubuntu / Debian / Mint
+
 ```bash
 sudo apt update
 sudo apt install -y build-essential cmake ninja-build libssl-dev git
 ```
 
 #### Fedora / RHEL / CentOS
+
 ```bash
 sudo dnf groupinstall -y "Development Tools"
 sudo dnf install -y cmake ninja-build openssl-devel git
 ```
 
 #### Build and Install
+
 ```bash
 git clone --depth=1 https://github.com/open-quantum-safe/liboqs.git
 cd liboqs
@@ -361,8 +367,10 @@ sudo cmake --install build
 ### 3. Compiling `liboqs` on Windows
 
 #### Option A: Native Visual Studio (MSVC) — Recommended
+
 1. Open **Developer PowerShell for VS**.
 2. Run:
+
 ```powershell
 git clone --depth=1 https://github.com/open-quantum-safe/liboqs.git
 cd liboqs
@@ -373,6 +381,7 @@ cmake --install build --config Release
 ```
 
 #### Option B: MSYS2 / MinGW-w64
+
 ```bash
 pacman -S git mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja mingw-w64-x86_64-toolchain mingw-w64-x86_64-openssl
 git clone --depth=1 https://github.com/open-quantum-safe/liboqs.git
@@ -387,10 +396,11 @@ cmake --install build
 ### 4. Configuring Dynamic Library Paths
 
 If Python cannot find `liboqs`:
-* **Linux:** `export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib`
-* **macOS:** `export DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH:/usr/local/lib`
-* **Windows:** Add `C:\Program Files (x86)\liboqs\bin` to your `PATH`.
-* **Universal Override:**
+
+- **Linux:** `export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib`
+- **macOS:** `export DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH:/usr/local/lib`
+- **Windows:** Add `C:\Program Files (x86)\liboqs\bin` to your `PATH`.
+- **Universal Override:**
   ```bash
   export LIBOQS_INSTALL_PATH="/usr/local/lib/liboqs.so"  # or .dylib / .dll
   ```
@@ -431,6 +441,7 @@ pip install "uxsp[dev]"
 For advanced custom protocols, microservices, and high-performance servers, UXSP provides granular low-level APIs.
 
 ### Level 1: Identity & Key Management
+
 ```python
 from uxsp import Identity, PublicCard
 
@@ -448,6 +459,7 @@ card_json = alice_card.to_json()
 ---
 
 ### Level 2: One-Shot Sealed Envelopes
+
 ```python
 from uxsp import Identity, ReplayGuard, MemoryNonceStore, StaleEnvelopeError, DuplicateNonceError
 
@@ -469,6 +481,7 @@ except (StaleEnvelopeError, DuplicateNonceError) as e:
 ---
 
 ### Level 3: Full-Duplex Authenticated Handshake & Sessions
+
 ```python
 from uxsp import Identity, Handshake, MemoryNonceStore, SessionConfig
 
@@ -497,6 +510,7 @@ assert dec == b"Channel message"
 ---
 
 ### Level 4: Advanced Payload Packing & Chunking
+
 ```python
 from uxsp import pack_file, unpack_to_file, create_chunked_transfer, reassemble_chunked_transfer
 
@@ -513,6 +527,7 @@ metadata, reconstructed = reassemble_chunked_transfer(chunks)
 ---
 
 ### Level 5: Trust Anchors & PKI Verification
+
 ```python
 from uxsp import TrustAnchor, TrustStore, Identity
 
@@ -532,6 +547,7 @@ verified_card = store.verify(signed_card)
 ---
 
 ### Level 6: Production Storage Backends (KeyStore & NonceStore)
+
 ```python
 import redis
 import psycopg2
@@ -550,6 +566,7 @@ pg_ks.create_table()
 ---
 
 ### Level 7: Rate Limiting & Guarded Endpoints
+
 ```python
 from uxsp import SlidingRateLimiter, GuardedHandshake, Identity, MemoryNonceStore
 
@@ -562,6 +579,7 @@ guarded = GuardedHandshake(limiter=limiter, responder=server_id, nonce_store=Mem
 ---
 
 ### Level 8: HTTP & WebSocket Transport Layers
+
 ```python
 from uxsp.transport.http import UXSPHTTPRequest
 from uxsp.transport.websocket import UXSPWebSocket
@@ -605,27 +623,27 @@ uxsp version
 
 ## Cryptographic Specifications
 
-| Component | Classical Primitive | Post-Quantum Primitive | Hybrid Mixing / Symmetric |
-|---|---|---|---|
-| **Key Exchange** | X25519 (ECDH) | ML-KEM-768 (CRYSTALS-Kyber) | HKDF-SHA256 |
-| **Digital Signatures** | Ed25519 | ML-DSA-65 (CRYSTALS-Dilithium) | Length-prefixed field binding |
-| **Symmetric Cipher** | — | — | AES-256-GCM (Authenticated) |
-| **Key Derivation** | — | — | HKDF-SHA256 |
-| **Password Storage** | — | — | Argon2id (64 MB, t=3, p=4) |
+| Component              | Classical Primitive | Post-Quantum Primitive         | Hybrid Mixing / Symmetric     |
+| ---------------------- | ------------------- | ------------------------------ | ----------------------------- |
+| **Key Exchange**       | X25519 (ECDH)       | ML-KEM-768 (CRYSTALS-Kyber)    | HKDF-SHA256                   |
+| **Digital Signatures** | Ed25519             | ML-DSA-65 (CRYSTALS-Dilithium) | Length-prefixed field binding |
+| **Symmetric Cipher**   | —                   | —                              | AES-256-GCM (Authenticated)   |
+| **Key Derivation**     | —                   | —                              | HKDF-SHA256                   |
+| **Password Storage**   | —                   | —                              | Argon2id (64 MB, t=3, p=4)    |
 
 ---
 
 ## Security Guarantees & Threat Model
 
-| Threat | UXSP Defense | Guarantee |
-|---|---|---|
-| **Network Eavesdropping** | AES-256-GCM with per-message nonces | Complete Confidentiality |
-| **Quantum Decryption (HNDL)** | ML-KEM-768 key encapsulation | Quantum-Proof Security |
-| **Stateless Replay Attacks** | `ReplayGuard` with timestamp window + nonce store | Replays Blocked |
-| **Man-in-the-Middle (MITM)** | HMAC-SHA256 proof of shared secret in handshake | MITM Defeated |
-| **Signature Forgery** | Dual signature (Ed25519 + ML-DSA-65) | Forgery Impossible |
-| **Out-of-Order Injection** | Strictly monotonically increasing sequence IDs | Desynchronization Blocked |
-| **DoS via Memory Bomb** | Pre-crypto byte limit checks (64 KB / 1 MB) | Resource Exhaustion Mitigated |
+| Threat                        | UXSP Defense                                      | Guarantee                     |
+| ----------------------------- | ------------------------------------------------- | ----------------------------- |
+| **Network Eavesdropping**     | AES-256-GCM with per-message nonces               | Complete Confidentiality      |
+| **Quantum Decryption (HNDL)** | ML-KEM-768 key encapsulation                      | Quantum-Proof Security        |
+| **Stateless Replay Attacks**  | `ReplayGuard` with timestamp window + nonce store | Replays Blocked               |
+| **Man-in-the-Middle (MITM)**  | HMAC-SHA256 proof of shared secret in handshake   | MITM Defeated                 |
+| **Signature Forgery**         | Dual signature (Ed25519 + ML-DSA-65)              | Forgery Impossible            |
+| **Out-of-Order Injection**    | Strictly monotonically increasing sequence IDs    | Desynchronization Blocked     |
+| **DoS via Memory Bomb**       | Pre-crypto byte limit checks (64 KB / 1 MB)       | Resource Exhaustion Mitigated |
 
 ---
 
@@ -669,6 +687,6 @@ UXSP is released under the **MIT License**. See [LICENSE](LICENSE) for details.
 
 ---
 
-*UXSP v1.0.1 · Python 3.11+*
+_UXSP v1.0.1 · Python 3.11+_
 
-*Maintained by SIVA RAJA S*
+_Maintained by SIVA RAJA S_

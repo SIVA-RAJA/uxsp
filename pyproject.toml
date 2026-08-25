@@ -61,6 +61,17 @@ redis    = ["redis >= 4.0.0"]
 # Postgres — durable nonce audit log via PostgresNonceStore.
 postgres = ["psycopg2-binary >= 2.9.0"]
 
+# Framework Integrations — 1-line middleware & decorators for FastAPI, Django, and Flask
+fastapi    = ["fastapi >= 0.100.0", "starlette >= 0.27.0", "httpx >= 0.24.0"]
+django     = ["django >= 4.0.0"]
+flask      = ["flask >= 2.0.0"]
+frameworks = [
+    "fastapi >= 0.100.0",
+    "starlette >= 0.27.0",
+    "django >= 4.0.0",
+    "flask >= 2.0.0",
+]
+
 # Development tools — locked to exact versions for reproducible CI.
 # These are NOT installed when a user runs `pip install uxsp`.
 dev = [
@@ -140,6 +151,7 @@ addopts   = "-v --tb=short --cov=uxsp --cov-report=term-missing"
 # liboqs-python wrapper may differ by patch version — this is harmless).
 filterwarnings = [
     "ignore::UserWarning:oqs",
+    "ignore::starlette.exceptions.StarletteDeprecationWarning",
 ]
 
 # ── Coverage ──────────────────────────────────────────────────────────────────
