@@ -1167,4 +1167,43 @@ class TestDirectObjectPassingAndMemoryHelpers:
         )
         assert received_dict == payload_dict
 
+    def test_from_encrypted_json_bytes_and_error_branches(self):
+        alice = uxsp.create_identity("Alice", role="CLIENT")
+        password = "TestPassword123!"
+        enc_json_str = alice.to_encrypted_json(password)
+        enc_json_bytes = enc_json_str.encode("utf-8")
+
+        # Deserializing from bytes
+        restored = Identity.from_encrypted_json(enc_json_bytes, password)
+        assert restored.entity_id == alice.entity_id
+
+        # Invalid JSON string
+        with pytest.raises(ValueError, match="Failed to parse encrypted JSON"):
+            Identity.from_encrypted_json("not valid json{{{", password)
+
+        # Non-dict payload
+        with pytest.raises(ValueError, match="Payload must be a dictionary"):
+            Identity.from_encrypted_dict("not a dict", password)  # type: ignore
+
+        # Missing encrypted_private section
+        with pytest.raises(ValueError, match="Identity payload missing encrypted_private"):
+            Identity.from_encrypted_dict({"version": Identity._VERSION}, password)
+
+    def test_normalize_id_and_missing_sender_receiver(self):
+        alice = uxsp.create_identity("Alice", role="CLIENT")
+        card = alice.public_card()
+
+        # _normalize_id with Identity & PublicCard
+        assert uxsp.secure._normalize_id(alice) == alice.entity_id
+        assert uxsp.secure._normalize_id(card) == alice.entity_id
+
+        # _secure_send_payload missing receiver
+        with pytest.raises(ValueError, match="Receiver identity or receiver_id must be provided"):
+            uxsp.secure._secure_send_payload(receiver=None)
+
+        # _secure_receive_payload missing sender
+        with pytest.raises(ValueError, match="Sender identity/card or sender_id must be provided"):
+            uxsp.secure._secure_receive_payload(sender=None)
+
+
 

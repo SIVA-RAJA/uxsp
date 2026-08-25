@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.1] - 2026-08-25
+
+### Milestone: High-Level API Simplification & In-Memory Identity Serialization
+
+UXSP 1.0.1 introduces a major developer workflow enhancement by removing global state requirements and manual temp-file plumbing. High-level functions now support direct object passing (`Identity` and `PublicCard`), and `Identity` supports in-memory encrypted serialization for database/session storage in web backends.
+
+### Added
+- **In-Memory Identity Serialization (`uxsp.core.identity`)**:
+  - `to_encrypted_json(password)` & `from_encrypted_json(encrypted_json, password)` for serializing/restoring encrypted identity payloads directly in memory (strings or bytes) without disk temporary files.
+  - `to_encrypted_dict(password)` & `from_encrypted_dict(payload, password)` dict-based serialization helpers.
+  - Top-level aliases `export_encrypted` and `import_encrypted`.
+  - Password hashing & verification static methods on `Identity`: `hash_password(password)` and `verify_password(stored_hash, password)`.
+- **Stateless Direct Object Passing (`uxsp.secure`)**:
+  - Refactored `_secure_send_payload` and `_secure_receive_payload` to accept `Identity` or `PublicCard` objects directly for `sender` and `receiver`.
+  - Updated all specialized and polymorphic send/receive handlers (`SendText`, `ReceiveText`, `SendFile`, `ReceiveFile`, `SendJSON`, `ReceiveJSON`, `Send`, `Receive`, etc.) to pass `sender` and `receiver` parameters directly, bypassing global `configure()` or `set_identity()` state for thread-safe multi-user application backends.
+- **Top-Level Package Helper Exports**:
+  - Exported `create_identity`, `export_identity_encrypted`, `import_identity_encrypted`, `hash_password`, and `verify_password` directly in `uxsp`.
+
+### Changed
+- **Application Integration**: Refactored `TharavuXchange` service layer (`uxsp_service.py`) to use the new simplified, stateless APIs and in-memory identity serialization.
+- **Test Coverage**: Achieved verified **100% statement coverage** (3,663 / 3,663 lines) across the entire library with 1,466 passing tests.
+
 ## [1.0.0] - 2026-08-14
 
 ### Milestone: Stable Production Release & Developer API

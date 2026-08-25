@@ -3,9 +3,9 @@
 [![Security: Hybrid PQC](https://img.shields.io/badge/Security-Hybrid%20PQC-blueviolet)](https://openquantumsafe.org/)
 [![Python: 3.11+](https://img.shields.io/badge/Python-3.11+-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests: 1459 passed](https://img.shields.io/badge/Tests-1459%20passed-brightgreen)]()
+[![Tests: 1466 passed](https://img.shields.io/badge/Tests-1466%20passed-brightgreen)]()
 [![Coverage: 100%](https://img.shields.io/badge/Coverage-100%25-brightgreen)]()
-[![Version: 1.0.0](https://img.shields.io/badge/Version-1.0.0-orange)]()
+[![Version: 1.0.1](https://img.shields.io/badge/Version-1.0.1-orange)]()
 
 **UXSP** is an enterprise-grade, **hybrid post-quantum secure messaging protocol** for Python. It is designed to protect data against both classical supercomputers and future quantum adversaries—specifically defeating the **"harvest now, decrypt later" (HNDL)** attack vector, where attackers capture encrypted traffic today to decrypt it once cryptographically relevant quantum computers (CRQCs) become viable.
 
@@ -22,10 +22,12 @@ Both layers must be broken simultaneously for an adversary to compromise the sys
 - [Quickstart: The Developer API (`uxsp.secure`)](#quickstart-the-developer-api-uxspsecure)
   - [1. Sender Side](#1-sender-side)
   - [2. Receiver Side](#2-receiver-side)
-  - [3. Supported 14 Data Types](#3-supported-14-data-types)
-  - [4. Universal Polymorphic Dispatch (`Send` & `Receive`)](#4-universal-polymorphic-dispatch-send--receive)
-  - [5. Exporting to Disk or Custom Transports (`SecurePackage`)](#5-exporting-to-disk-or-custom-transports-securepackage)
-  - [6. Global Context Configuration](#6-global-context-configuration)
+  - [3. Stateless Direct Object Passing (Web & Multi-Tenant Support)](#3-stateless-direct-object-passing-web--multi-tenant-support)
+  - [4. In-Memory Identity Serialization & Password Helpers](#4-in-memory-identity-serialization--password-helpers)
+  - [5. Supported 14 Data Types](#5-supported-14-data-types)
+  - [6. Universal Polymorphic Dispatch (`Send` & `Receive`)](#6-universal-polymorphic-dispatch-send--receive)
+  - [7. Exporting to Disk or Custom Transports (`SecurePackage`)](#7-exporting-to-disk-or-custom-transports-securepackage)
+  - [8. Global Context Configuration](#8-global-context-configuration)
 - [How it Works](#how-it-works)
 - [Operating System Compatibility](#operating-system-compatibility)
 - [Prerequisites: Building `liboqs` for All Platforms](#prerequisites-building-liboqs-for-all-platforms)
@@ -56,7 +58,7 @@ Both layers must be broken simultaneously for an adversary to compromise the sys
 
 ## Quickstart: The Developer API (`uxsp.secure`)
 
-UXSP v1.0.0 introduces the **Developer Workflow (`uxsp.secure`)**. You do not need to configure handshakes, cryptographic sessions, or nonce databases manually for standard operations. **Everything can be sent and received in 1-2 lines of Python.**
+UXSP v1.0.1 introduces a **stateless, developer-first workflow**. You do not need to configure handshakes, cryptographic sessions, or nonce databases manually for standard operations. **Everything can be sent and received in 1-2 lines of Python.**
 
 ### 1. Sender Side
 To send an encrypted and quantum-signed asset to a receiver, provide the receiver's Unique ID (`entity_id` / UID) and the asset to send:
@@ -106,7 +108,65 @@ print(f"Received coordinates: {location['latitude']}, {location['longitude']}")
 
 ---
 
-### 3. Supported 14 Data Types
+### 3. Stateless Direct Object Passing (Web & Multi-Tenant Support)
+
+In web frameworks (FastAPI, Flask, Django) or multi-tenant microservices, you may want to pass `Identity` and `PublicCard` instances directly without relying on global context state:
+
+```python
+import uxsp
+from uxsp.secure import SendText, ReceiveText
+
+# 1. Create or load identities directly in memory
+alice = uxsp.create_identity("Alice", role="CLIENT")
+bob = uxsp.create_identity("Bob", role="SERVER")
+
+# 2. Alice sends to Bob passing Bob's PublicCard and Alice's Identity directly
+package = SendText(
+    text="Hello directly from Alice!",
+    receiver=bob.public_card(),
+    sender=alice
+)
+
+# 3. Bob receives passing Alice's PublicCard and Bob's Identity directly
+message = ReceiveText(
+    package=package,
+    sender=alice.public_card(),
+    receiver=bob
+)
+print("Decrypted stateless message:", message)
+```
+
+---
+
+### 4. In-Memory Identity Serialization & Password Helpers
+
+UXSP provides zero-disk-I/O encrypted serialization for storing user identities in web databases (PostgreSQL, MongoDB, Redis, session cookies):
+
+```python
+import uxsp
+
+# 1. Create a user identity
+alice = uxsp.create_identity("Alice", role="CLIENT")
+user_password = "UserMasterPassword123!"
+
+# 2. Export identity to an encrypted JSON string (Argon2id + AES-256-GCM)
+encrypted_str = uxsp.export_identity_encrypted(alice, user_password)
+
+# 3. Save `encrypted_str` in database column (e.g. TEXT / JSON)
+# ...
+
+# 4. Restore identity in memory from encrypted JSON string
+restored_alice = uxsp.import_identity_encrypted(encrypted_str, user_password)
+assert restored_alice.entity_id == alice.entity_id
+
+# 5. Password Hashing & Verification helpers (Argon2id)
+hashed_password = uxsp.hash_password(user_password)
+is_valid = uxsp.verify_password(hashed_password, user_password) # True
+```
+
+---
+
+### 5. Supported 14 Data Types
 
 UXSP supports 14 dedicated data types with typed helpers and automatic MIME detection:
 
@@ -129,7 +189,7 @@ UXSP supports 14 dedicated data types with typed helpers and automatic MIME dete
 
 ---
 
-### 4. Universal Polymorphic Dispatch (`Send` & `Receive`)
+### 6. Universal Polymorphic Dispatch (`Send` & `Receive`)
 
 If you prefer a single function for all data types, use the universal `Send` and `Receive` dispatchers. They automatically detect the payload type from file extensions or data structures:
 
@@ -152,7 +212,7 @@ content = Receive("alice_uid", package=pkg3)
 
 ---
 
-### 5. Exporting to Disk or Custom Transports (`SecurePackage`)
+### 7. Exporting to Disk or Custom Transports (`SecurePackage`)
 
 Every `Send*` method returns a `SecurePackage` object containing the encrypted hybrid envelope, metadata, and data type. You can save packages directly to files, transmit them over REST APIs, or pass them via message queues (RabbitMQ, Kafka, SQS):
 
@@ -177,7 +237,7 @@ result = ReceiveText("alice_uid", package=loaded_package)
 
 ---
 
-### 6. Global Context Configuration
+### 8. Global Context Configuration
 
 By default, `uxsp.secure` automatically creates a default ephemeral identity and in-memory stores for zero-setup convenience. In production, configure persistent storage, custom identities, and default download directories:
 
@@ -581,7 +641,7 @@ uxsp version
 
 ## Running the Test Suite
 
-UXSP maintains **100% test coverage** across all 3,590 executable statements.
+UXSP maintains **100% test coverage** across all 3,663 executable statements.
 
 ```bash
 # 1. Install dev dependencies
@@ -609,6 +669,6 @@ UXSP is released under the **MIT License**. See [LICENSE](LICENSE) for details.
 
 ---
 
-*UXSP v1.0.0 · Python 3.11+*
+*UXSP v1.0.1 · Python 3.11+*
 
 *Maintained by SIVA RAJA S*

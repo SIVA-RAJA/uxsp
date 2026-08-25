@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name            = "uxsp"
-version         = "1.0.0"
+version         = "1.0.1"
 description     = "Universal Exchange Security Protocol — Hybrid Post-Quantum Secure Messaging"
 readme          = "README.md"
 requires-python = ">=3.11"
