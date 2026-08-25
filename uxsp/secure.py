@@ -308,13 +308,40 @@ def reset_context() -> None:
     _GLOBAL_CONTEXT.reset()
 
 
+def create_identity(name: str, role: str = "CLIENT") -> Identity:
+    """Create a brand-new Identity with a freshly generated hybrid keypair."""
+    return Identity.create(name=name, role=role)
+
+
+def hash_password(password: str) -> str:
+    """Hash a password using Argon2id."""
+    return Identity.hash_password(password)
+
+
+def verify_password(stored_hash: str, password: str) -> bool:
+    """Verify a password against an Argon2id PHC string hash."""
+    return Identity.verify_password(stored_hash, password)
+
+
+def export_identity_encrypted(identity: Identity, password: str) -> str:
+    """Export an Identity to an encrypted JSON string protected by password."""
+    return identity.to_encrypted_json(password)
+
+
+def import_identity_encrypted(encrypted_json: str | bytes, password: str) -> Identity:
+    """Import an Identity from an encrypted JSON string protected by password."""
+    return Identity.from_encrypted_json(encrypted_json, password)
+
+
 # ═════════════════════════════════════════════════════════════
 # INTERNAL CORE ENGINE — PACK, ENCRYPT, SEAL & CHUNKING
 # ═════════════════════════════════════════════════════════════
 
 
-def _normalize_id(entity_id: str | int) -> str:
+def _normalize_id(entity_id: str | int | PublicCard | Identity) -> str:
     """Ensure entity ID is a non-empty string."""
+    if isinstance(entity_id, (PublicCard, Identity)):
+        return entity_id.entity_id
     norm = str(entity_id).strip()
     if not norm:
         raise ValueError("Entity ID cannot be empty.")
@@ -352,28 +379,43 @@ def _resolve_package_input(package_input: Any) -> SecurePackage:
 
 
 def _secure_send_payload(
-    receiver_id: str | int,
-    payload_bytes: bytes,
-    data_type: str,
+    receiver_id: str | int | PublicCard | Identity | None = None,
+    payload_bytes: bytes = b"",
+    data_type: str = "file",
     *,
     sender_identity: Identity | None = None,
+    sender: Identity | None = None,
+    receiver: str | int | PublicCard | Identity | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> SecurePackage:
     """
-    Encrypt and seal packed payload bytes for receiver_id.
+    Encrypt and seal packed payload bytes for receiver_id or receiver.
     Automatically uses standard Envelope for <= 64KB and Chunked Transfer for > 64KB.
+    Can take sender identity and receiver PublicCard directly without global config.
     """
-    rec_id = _normalize_id(receiver_id)
-    sender = sender_identity or _GLOBAL_CONTEXT.get_identity()
-    peer_card = _GLOBAL_CONTEXT.get_peer(rec_id)
+    rec_target = receiver if receiver is not None else receiver_id
+    if rec_target is None:
+        raise ValueError("Receiver identity or receiver_id must be provided.")
+
+    if isinstance(rec_target, Identity):
+        peer_card = rec_target.public_card()
+        rec_id = rec_target.entity_id
+    elif isinstance(rec_target, PublicCard):
+        peer_card = rec_target
+        rec_id = rec_target.entity_id
+    else:
+        rec_id = _normalize_id(rec_target)
+        peer_card = _GLOBAL_CONTEXT.get_peer(rec_id)
+
+    sender_obj = sender or sender_identity or _GLOBAL_CONTEXT.get_identity()
     meta = metadata or {}
 
     # Use single envelope for payloads <= 30 KiB to ensure sealed envelope stays under 64 KiB
     if len(payload_bytes) <= 30 * 1024:
-        env = sender.seal_for(payload_bytes, peer_card)
+        env = sender_obj.seal_for(payload_bytes, peer_card)
         package = SecurePackage(
-            sender_id=sender.entity_id,
+            sender_id=sender_obj.entity_id,
             receiver_id=rec_id,
             data_type=data_type,
             is_chunked=False,
@@ -385,11 +427,11 @@ def _secure_send_payload(
         chunks = create_chunked_transfer(payload_bytes, chunk_size=16 * 1024)
         sealed_chunks: list[dict[str, Any]] = []
         for chunk_bytes in chunks:
-            chunk_env = sender.seal_for(chunk_bytes, peer_card)
+            chunk_env = sender_obj.seal_for(chunk_bytes, peer_card)
             sealed_chunks.append(chunk_env.to_dict())
 
         package = SecurePackage(
-            sender_id=sender.entity_id,
+            sender_id=sender_obj.entity_id,
             receiver_id=rec_id,
             data_type=data_type,
             is_chunked=True,
@@ -405,29 +447,45 @@ def _secure_send_payload(
 
 
 def _secure_receive_payload(
-    sender_id: str | int,
-    package_input: Any,
+    sender_id: str | int | PublicCard | Identity | None = None,
+    package_input: Any = None,
     expected_type: str | None = None,
     *,
     receiver_identity: Identity | None = None,
+    receiver: Identity | None = None,
+    sender: str | int | PublicCard | Identity | None = None,
+    sender_card: PublicCard | Identity | None = None,
 ) -> bytes:
     """
-    Verify, unseal, and assemble payload bytes from sender_id.
+    Verify, unseal, and assemble payload bytes from sender_id or sender.
     Enforces replay protection and verifies hybrid signatures.
+    Can take receiver identity and sender PublicCard directly without global config.
     """
-    snd_id = _normalize_id(sender_id)
+    snd_target = sender_card if sender_card is not None else (sender if sender is not None else sender_id)
+    if snd_target is None:
+        raise ValueError("Sender identity/card or sender_id must be provided.")
+
+    if isinstance(snd_target, Identity):
+        peer_card = snd_target.public_card()
+        snd_id = snd_target.entity_id
+    elif isinstance(snd_target, PublicCard):
+        peer_card = snd_target
+        snd_id = snd_target.entity_id
+    else:
+        snd_id = _normalize_id(snd_target)
+        peer_card = _GLOBAL_CONTEXT.get_peer(snd_id)
+
     package = _resolve_package_input(package_input)
-    receiver = receiver_identity or _GLOBAL_CONTEXT.get_identity()
-    peer_card = _GLOBAL_CONTEXT.get_peer(snd_id)
+    receiver_obj = receiver or receiver_identity or _GLOBAL_CONTEXT.get_identity()
     guard = _GLOBAL_CONTEXT.get_replay_guard()
 
     if package.sender_id != snd_id:
         raise SecureReceiveError(
             f"Sender ID mismatch: expected '{snd_id}', package has '{package.sender_id}'"
         )
-    if package.receiver_id != receiver.entity_id:
+    if package.receiver_id != receiver_obj.entity_id:
         raise SecureReceiveError(
-            f"Receiver ID mismatch: intended for '{package.receiver_id}', current identity is '{receiver.entity_id}'"
+            f"Receiver ID mismatch: intended for '{package.receiver_id}', current identity is '{receiver_obj.entity_id}'"
         )
 
     if expected_type is not None and package.data_type != expected_type:
@@ -439,7 +497,7 @@ def _secure_receive_payload(
         if package.envelope is None:
             raise SecureReceiveError("Package is marked non-chunked but missing envelope.")
         env = Envelope.from_dict(package.envelope)
-        payload_bytes = receiver.open_from(env, peer_card, replay_guard=guard)
+        payload_bytes = receiver_obj.open_from(env, peer_card, replay_guard=guard)
         return payload_bytes
     else:
         if not package.chunks:
@@ -447,7 +505,7 @@ def _secure_receive_payload(
         raw_chunks: list[bytes] = []
         for chunk_env_dict in package.chunks:
             c_env = Envelope.from_dict(chunk_env_dict)
-            c_bytes = receiver.open_from(c_env, peer_card, replay_guard=guard)
+            c_bytes = receiver_obj.open_from(c_env, peer_card, replay_guard=guard)
             raw_chunks.append(c_bytes)
 
         _, reassembled = reassemble_chunked_transfer(raw_chunks)
@@ -482,14 +540,17 @@ def _resolve_download_target(
 
 
 def SendVideo(
-    receiver_id: str | int,
-    video_path_or_bytes: str | Path | bytes,
+    receiver_id: str | int | PublicCard | Identity | None = None,
+    video_path_or_bytes: str | Path | bytes | None = None,
     *,
+    receiver: str | int | PublicCard | Identity | None = None,
+    sender: Identity | None = None,
+    sender_identity: Identity | None = None,
     filename: str | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> SecurePackage:
-    """Encrypt and send a video to receiver_id."""
+    """Encrypt and send a video to receiver."""
     if isinstance(video_path_or_bytes, (str, Path)):
         if not _safe_is_file(video_path_or_bytes):
             raise SecureSendError(f"File not found: {video_path_or_bytes}")
@@ -505,6 +566,9 @@ def SendVideo(
 
     return _secure_send_payload(
         receiver_id=receiver_id,
+        receiver=receiver,
+        sender=sender,
+        sender_identity=sender_identity,
         payload_bytes=packed,
         data_type="video",
         output_file=output_file,
@@ -513,12 +577,25 @@ def SendVideo(
 
 
 def ReceiveVideo(
-    sender_id: str | int,
+    sender_id: str | int | PublicCard | Identity | None = None,
     download_path: str | Path | None = None,
     package: Any = None,
+    *,
+    sender: str | int | PublicCard | Identity | None = None,
+    sender_card: PublicCard | Identity | None = None,
+    receiver: Identity | None = None,
+    receiver_identity: Identity | None = None,
 ) -> Path:
-    """Receive, decrypt, and save a video from sender_id."""
-    raw_payload = _secure_receive_payload(sender_id, package, expected_type="video")
+    """Receive, decrypt, and save a video from sender."""
+    raw_payload = _secure_receive_payload(
+        sender_id=sender_id,
+        sender=sender,
+        sender_card=sender_card,
+        receiver=receiver,
+        receiver_identity=receiver_identity,
+        package_input=package,
+        expected_type="video",
+    )
     payload = UXSPPayload.from_bytes(raw_payload)
     default_name = payload.filename or "received_video.mp4"
     target_file = _resolve_download_target(download_path, default_name)
@@ -530,14 +607,17 @@ def ReceiveVideo(
 
 
 def SendAudio(
-    receiver_id: str | int,
-    audio_path_or_bytes: str | Path | bytes,
+    receiver_id: str | int | PublicCard | Identity | None = None,
+    audio_path_or_bytes: str | Path | bytes | None = None,
     *,
+    receiver: str | int | PublicCard | Identity | None = None,
+    sender: Identity | None = None,
+    sender_identity: Identity | None = None,
     filename: str | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> SecurePackage:
-    """Encrypt and send audio to receiver_id."""
+    """Encrypt and send audio to receiver."""
     if isinstance(audio_path_or_bytes, (str, Path)):
         if not _safe_is_file(audio_path_or_bytes):
             raise SecureSendError(f"File not found: {audio_path_or_bytes}")
@@ -552,17 +632,37 @@ def SendAudio(
         raise SecureSendError("audio_path_or_bytes must be a file path or bytes.")
 
     return _secure_send_payload(
-        receiver_id, packed, "audio", output_file=output_file, metadata=metadata
+        receiver_id=receiver_id,
+        receiver=receiver,
+        sender=sender,
+        sender_identity=sender_identity,
+        payload_bytes=packed,
+        data_type="audio",
+        output_file=output_file,
+        metadata=metadata,
     )
 
 
 def ReceiveAudio(
-    sender_id: str | int,
+    sender_id: str | int | PublicCard | Identity | None = None,
     download_path: str | Path | None = None,
     package: Any = None,
+    *,
+    sender: str | int | PublicCard | Identity | None = None,
+    sender_card: PublicCard | Identity | None = None,
+    receiver: Identity | None = None,
+    receiver_identity: Identity | None = None,
 ) -> Path:
-    """Receive, decrypt, and save audio from sender_id."""
-    raw_payload = _secure_receive_payload(sender_id, package, expected_type="audio")
+    """Receive, decrypt, and save audio from sender."""
+    raw_payload = _secure_receive_payload(
+        sender_id=sender_id,
+        sender=sender,
+        sender_card=sender_card,
+        receiver=receiver,
+        receiver_identity=receiver_identity,
+        package_input=package,
+        expected_type="audio",
+    )
     payload = UXSPPayload.from_bytes(raw_payload)
     default_name = payload.filename or "received_audio.mp3"
     target_file = _resolve_download_target(download_path, default_name)
@@ -574,14 +674,17 @@ def ReceiveAudio(
 
 
 def SendPhoto(
-    receiver_id: str | int,
-    photo_path_or_bytes: str | Path | bytes,
+    receiver_id: str | int | PublicCard | Identity | None = None,
+    photo_path_or_bytes: str | Path | bytes | None = None,
     *,
+    receiver: str | int | PublicCard | Identity | None = None,
+    sender: Identity | None = None,
+    sender_identity: Identity | None = None,
     filename: str | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> SecurePackage:
-    """Encrypt and send a photo/image to receiver_id."""
+    """Encrypt and send a photo/image to receiver."""
     if isinstance(photo_path_or_bytes, (str, Path)):
         if not _safe_is_file(photo_path_or_bytes):
             raise SecureSendError(f"File not found: {photo_path_or_bytes}")
@@ -596,17 +699,37 @@ def SendPhoto(
         raise SecureSendError("photo_path_or_bytes must be a file path or bytes.")
 
     return _secure_send_payload(
-        receiver_id, packed, "photo", output_file=output_file, metadata=metadata
+        receiver_id=receiver_id,
+        receiver=receiver,
+        sender=sender,
+        sender_identity=sender_identity,
+        payload_bytes=packed,
+        data_type="photo",
+        output_file=output_file,
+        metadata=metadata,
     )
 
 
 def ReceivePhoto(
-    sender_id: str | int,
+    sender_id: str | int | PublicCard | Identity | None = None,
     download_path: str | Path | None = None,
     package: Any = None,
+    *,
+    sender: str | int | PublicCard | Identity | None = None,
+    sender_card: PublicCard | Identity | None = None,
+    receiver: Identity | None = None,
+    receiver_identity: Identity | None = None,
 ) -> Path:
-    """Receive, decrypt, and save a photo/image from sender_id."""
-    raw_payload = _secure_receive_payload(sender_id, package, expected_type="photo")
+    """Receive, decrypt, and save a photo/image from sender."""
+    raw_payload = _secure_receive_payload(
+        sender_id=sender_id,
+        sender=sender,
+        sender_card=sender_card,
+        receiver=receiver,
+        receiver_identity=receiver_identity,
+        package_input=package,
+        expected_type="photo",
+    )
     payload = UXSPPayload.from_bytes(raw_payload)
     default_name = payload.filename or "received_photo.jpg"
     target_file = _resolve_download_target(download_path, default_name)
@@ -623,33 +746,55 @@ ReceiveImage = ReceivePhoto
 
 
 def SendText(
-    receiver_id: str | int,
-    text: str,
+    receiver_id: str | int | PublicCard | Identity | None = None,
+    text: str = "",
     *,
+    receiver: str | int | PublicCard | Identity | None = None,
+    sender: Identity | None = None,
+    sender_identity: Identity | None = None,
     encoding: str = "utf-8",
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> SecurePackage:
-    """Encrypt and send a text message to receiver_id."""
+    """Encrypt and send a text message to receiver."""
     if not isinstance(text, str):
         raise SecureSendError("text must be a string.")
     packed = pack_text(text, encoding=encoding)
     return _secure_send_payload(
-        receiver_id, packed, "text", output_file=output_file, metadata=metadata
+        receiver_id=receiver_id,
+        receiver=receiver,
+        sender=sender,
+        sender_identity=sender_identity,
+        payload_bytes=packed,
+        data_type="text",
+        output_file=output_file,
+        metadata=metadata,
     )
 
 
 def ReceiveText(
-    sender_id: str | int,
+    sender_id: str | int | PublicCard | Identity | None = None,
     package: Any = None,
     *,
     download_path: str | Path | None = None,
+    sender: str | int | PublicCard | Identity | None = None,
+    sender_card: PublicCard | Identity | None = None,
+    receiver: Identity | None = None,
+    receiver_identity: Identity | None = None,
 ) -> str:
     """
-    Receive, decrypt, and return a text message from sender_id.
+    Receive, decrypt, and return a text message from sender.
     If download_path is provided, also writes the text to that file.
     """
-    raw_payload = _secure_receive_payload(sender_id, package, expected_type="text")
+    raw_payload = _secure_receive_payload(
+        sender_id=sender_id,
+        sender=sender,
+        sender_card=sender_card,
+        receiver=receiver,
+        receiver_identity=receiver_identity,
+        package_input=package,
+        expected_type="text",
+    )
     text_content = unpack_text(raw_payload)
     if download_path is not None:
         target_file = _resolve_download_target(download_path, "received_text.txt")
@@ -661,14 +806,17 @@ def ReceiveText(
 
 
 def SendDocument(
-    receiver_id: str | int,
-    doc_path_or_bytes: str | Path | bytes,
+    receiver_id: str | int | PublicCard | Identity | None = None,
+    doc_path_or_bytes: str | Path | bytes | None = None,
     *,
+    receiver: str | int | PublicCard | Identity | None = None,
+    sender: Identity | None = None,
+    sender_identity: Identity | None = None,
     filename: str | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> SecurePackage:
-    """Encrypt and send a document to receiver_id."""
+    """Encrypt and send a document to receiver."""
     if isinstance(doc_path_or_bytes, (str, Path)):
         if not _safe_is_file(doc_path_or_bytes):
             raise SecureSendError(f"File not found: {doc_path_or_bytes}")
@@ -683,17 +831,37 @@ def SendDocument(
         raise SecureSendError("doc_path_or_bytes must be a file path or bytes.")
 
     return _secure_send_payload(
-        receiver_id, packed, "document", output_file=output_file, metadata=metadata
+        receiver_id=receiver_id,
+        receiver=receiver,
+        sender=sender,
+        sender_identity=sender_identity,
+        payload_bytes=packed,
+        data_type="document",
+        output_file=output_file,
+        metadata=metadata,
     )
 
 
 def ReceiveDocument(
-    sender_id: str | int,
+    sender_id: str | int | PublicCard | Identity | None = None,
     download_path: str | Path | None = None,
     package: Any = None,
+    *,
+    sender: str | int | PublicCard | Identity | None = None,
+    sender_card: PublicCard | Identity | None = None,
+    receiver: Identity | None = None,
+    receiver_identity: Identity | None = None,
 ) -> Path:
-    """Receive, decrypt, and save a document from sender_id."""
-    raw_payload = _secure_receive_payload(sender_id, package, expected_type="document")
+    """Receive, decrypt, and save a document from sender."""
+    raw_payload = _secure_receive_payload(
+        sender_id=sender_id,
+        sender=sender,
+        sender_card=sender_card,
+        receiver=receiver,
+        receiver_identity=receiver_identity,
+        package_input=package,
+        expected_type="document",
+    )
     payload = UXSPPayload.from_bytes(raw_payload)
     default_name = payload.filename or "received_document.bin"
     target_file = _resolve_download_target(download_path, default_name)
@@ -709,14 +877,17 @@ ReceiveDoc = ReceiveDocument
 
 
 def SendPDF(
-    receiver_id: str | int,
-    pdf_path_or_bytes: str | Path | bytes,
+    receiver_id: str | int | PublicCard | Identity | None = None,
+    pdf_path_or_bytes: str | Path | bytes | None = None,
     *,
+    receiver: str | int | PublicCard | Identity | None = None,
+    sender: Identity | None = None,
+    sender_identity: Identity | None = None,
     filename: str | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> SecurePackage:
-    """Encrypt and send a PDF file to receiver_id."""
+    """Encrypt and send a PDF file to receiver."""
     if isinstance(pdf_path_or_bytes, (str, Path)):
         if not _safe_is_file(pdf_path_or_bytes):
             raise SecureSendError(f"File not found: {pdf_path_or_bytes}")
@@ -730,17 +901,37 @@ def SendPDF(
         raise SecureSendError("pdf_path_or_bytes must be a file path or bytes.")
 
     return _secure_send_payload(
-        receiver_id, packed, "pdf", output_file=output_file, metadata=metadata
+        receiver_id=receiver_id,
+        receiver=receiver,
+        sender=sender,
+        sender_identity=sender_identity,
+        payload_bytes=packed,
+        data_type="pdf",
+        output_file=output_file,
+        metadata=metadata,
     )
 
 
 def ReceivePDF(
-    sender_id: str | int,
+    sender_id: str | int | PublicCard | Identity | None = None,
     download_path: str | Path | None = None,
     package: Any = None,
+    *,
+    sender: str | int | PublicCard | Identity | None = None,
+    sender_card: PublicCard | Identity | None = None,
+    receiver: Identity | None = None,
+    receiver_identity: Identity | None = None,
 ) -> Path:
-    """Receive, decrypt, and save a PDF from sender_id."""
-    raw_payload = _secure_receive_payload(sender_id, package, expected_type="pdf")
+    """Receive, decrypt, and save a PDF from sender."""
+    raw_payload = _secure_receive_payload(
+        sender_id=sender_id,
+        sender=sender,
+        sender_card=sender_card,
+        receiver=receiver,
+        receiver_identity=receiver_identity,
+        package_input=package,
+        expected_type="pdf",
+    )
     payload = UXSPPayload.from_bytes(raw_payload)
     default_name = payload.filename or "received.pdf"
     target_file = _resolve_download_target(download_path, default_name)
@@ -752,15 +943,18 @@ def ReceivePDF(
 
 
 def SendFile(
-    receiver_id: str | int,
-    file_path_or_bytes: str | Path | bytes | bytearray,
+    receiver_id: str | int | PublicCard | Identity | None = None,
+    file_path_or_bytes: str | Path | bytes | bytearray | None = None,
     *,
+    receiver: str | int | PublicCard | Identity | None = None,
+    sender: Identity | None = None,
+    sender_identity: Identity | None = None,
     filename: str | None = None,
     content_type: str | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> SecurePackage:
-    """Encrypt and send any file to receiver_id."""
+    """Encrypt and send any file or file bytes to receiver."""
     if isinstance(file_path_or_bytes, (bytes, bytearray)):
         payload = UXSPPayload(
             kind="file",
@@ -776,18 +970,39 @@ def SendFile(
         packed = pack_file(p, content_type=content_type)
     else:
         raise SecureSendError("file_path_or_bytes must be a path or bytes.")
+
     return _secure_send_payload(
-        receiver_id, packed, "file", output_file=output_file, metadata=metadata
+        receiver_id=receiver_id,
+        receiver=receiver,
+        sender=sender,
+        sender_identity=sender_identity,
+        payload_bytes=packed,
+        data_type="file",
+        output_file=output_file,
+        metadata=metadata,
     )
 
 
 def ReceiveFile(
-    sender_id: str | int,
+    sender_id: str | int | PublicCard | Identity | None = None,
     download_path: str | Path | None = None,
     package: Any = None,
+    *,
+    sender: str | int | PublicCard | Identity | None = None,
+    sender_card: PublicCard | Identity | None = None,
+    receiver: Identity | None = None,
+    receiver_identity: Identity | None = None,
 ) -> Path:
-    """Receive, decrypt, and save a file from sender_id."""
-    raw_payload = _secure_receive_payload(sender_id, package, expected_type="file")
+    """Receive, decrypt, and save a file from sender."""
+    raw_payload = _secure_receive_payload(
+        sender_id=sender_id,
+        sender=sender,
+        sender_card=sender_card,
+        receiver=receiver,
+        receiver_identity=receiver_identity,
+        package_input=package,
+        expected_type="file",
+    )
     payload = UXSPPayload.from_bytes(raw_payload)
     default_name = payload.filename or "received_file.bin"
     target_file = _resolve_download_target(download_path, default_name)
@@ -799,34 +1014,56 @@ def ReceiveFile(
 
 
 def SendBinary(
-    receiver_id: str | int,
-    data: bytes | bytearray,
+    receiver_id: str | int | PublicCard | Identity | None = None,
+    data: bytes | bytearray | None = None,
     *,
+    receiver: str | int | PublicCard | Identity | None = None,
+    sender: Identity | None = None,
+    sender_identity: Identity | None = None,
     filename: str | None = None,
     content_type: str = "application/octet-stream",
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> SecurePackage:
-    """Encrypt and send raw binary data to receiver_id."""
+    """Encrypt and send raw binary data to receiver."""
     if not isinstance(data, (bytes, bytearray)):
         raise SecureSendError("data must be bytes or bytearray.")
     packed = pack_binary(data, filename=filename, content_type=content_type)
     return _secure_send_payload(
-        receiver_id, packed, "binary", output_file=output_file, metadata=metadata
+        receiver_id=receiver_id,
+        receiver=receiver,
+        sender=sender,
+        sender_identity=sender_identity,
+        payload_bytes=packed,
+        data_type="binary",
+        output_file=output_file,
+        metadata=metadata,
     )
 
 
 def ReceiveBinary(
-    sender_id: str | int,
+    sender_id: str | int | PublicCard | Identity | None = None,
     package: Any = None,
     *,
     download_path: str | Path | None = None,
+    sender: str | int | PublicCard | Identity | None = None,
+    sender_card: PublicCard | Identity | None = None,
+    receiver: Identity | None = None,
+    receiver_identity: Identity | None = None,
 ) -> bytes:
     """
-    Receive, decrypt, and return raw binary bytes from sender_id.
+    Receive, decrypt, and return raw binary bytes from sender.
     If download_path is provided, also saves bytes to that path.
     """
-    raw_payload = _secure_receive_payload(sender_id, package, expected_type="binary")
+    raw_payload = _secure_receive_payload(
+        sender_id=sender_id,
+        sender=sender,
+        sender_card=sender_card,
+        receiver=receiver,
+        receiver_identity=receiver_identity,
+        package_input=package,
+        expected_type="binary",
+    )
     payload = UXSPPayload.from_bytes(raw_payload)
     if download_path is not None:
         default_name = payload.filename or "received.bin"
@@ -839,13 +1076,16 @@ def ReceiveBinary(
 
 
 def SendJSON(
-    receiver_id: str | int,
-    data: Any,
+    receiver_id: str | int | PublicCard | Identity | None = None,
+    data: Any = None,
     *,
+    receiver: str | int | PublicCard | Identity | None = None,
+    sender: Identity | None = None,
+    sender_identity: Identity | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> SecurePackage:
-    """Encrypt and send JSON-serializable data (dict, list, etc.) to receiver_id."""
+    """Encrypt and send JSON-serializable data (dict, list, etc.) to receiver."""
     try:
         json_text = json.dumps(data, ensure_ascii=False)
     except Exception as exc:
@@ -857,21 +1097,40 @@ def SendJSON(
         encoding="utf-8",
     )
     return _secure_send_payload(
-        receiver_id, payload.to_bytes(), "json", output_file=output_file, metadata=metadata
+        receiver_id=receiver_id,
+        receiver=receiver,
+        sender=sender,
+        sender_identity=sender_identity,
+        payload_bytes=payload.to_bytes(),
+        data_type="json",
+        output_file=output_file,
+        metadata=metadata,
     )
 
 
 def ReceiveJSON(
-    sender_id: str | int,
+    sender_id: str | int | PublicCard | Identity | None = None,
     package: Any = None,
     *,
     download_path: str | Path | None = None,
+    sender: str | int | PublicCard | Identity | None = None,
+    sender_card: PublicCard | Identity | None = None,
+    receiver: Identity | None = None,
+    receiver_identity: Identity | None = None,
 ) -> Any:
     """
-    Receive, decrypt, and return parsed JSON data from sender_id.
+    Receive, decrypt, and return parsed JSON data from sender.
     If download_path is provided, also writes the JSON text to that file.
     """
-    raw_payload = _secure_receive_payload(sender_id, package, expected_type="json")
+    raw_payload = _secure_receive_payload(
+        sender_id=sender_id,
+        sender=sender,
+        sender_card=sender_card,
+        receiver=receiver,
+        receiver_identity=receiver_identity,
+        package_input=package,
+        expected_type="json",
+    )
     payload = UXSPPayload.from_bytes(raw_payload)
     text = payload.body.decode(payload.encoding or "utf-8")
     if download_path is not None:
@@ -884,13 +1143,16 @@ def ReceiveJSON(
 
 
 def SendHTML(
-    receiver_id: str | int,
-    html_content: str,
+    receiver_id: str | int | PublicCard | Identity | None = None,
+    html_content: str = "",
     *,
+    receiver: str | int | PublicCard | Identity | None = None,
+    sender: Identity | None = None,
+    sender_identity: Identity | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> SecurePackage:
-    """Encrypt and send HTML content to receiver_id."""
+    """Encrypt and send HTML content to receiver."""
     if not isinstance(html_content, str):
         raise SecureSendError("html_content must be a string.")
     payload = UXSPPayload(
@@ -900,21 +1162,40 @@ def SendHTML(
         encoding="utf-8",
     )
     return _secure_send_payload(
-        receiver_id, payload.to_bytes(), "html", output_file=output_file, metadata=metadata
+        receiver_id=receiver_id,
+        receiver=receiver,
+        sender=sender,
+        sender_identity=sender_identity,
+        payload_bytes=payload.to_bytes(),
+        data_type="html",
+        output_file=output_file,
+        metadata=metadata,
     )
 
 
 def ReceiveHTML(
-    sender_id: str | int,
+    sender_id: str | int | PublicCard | Identity | None = None,
     package: Any = None,
     *,
     download_path: str | Path | None = None,
+    sender: str | int | PublicCard | Identity | None = None,
+    sender_card: PublicCard | Identity | None = None,
+    receiver: Identity | None = None,
+    receiver_identity: Identity | None = None,
 ) -> str:
     """
-    Receive, decrypt, and return HTML content from sender_id.
+    Receive, decrypt, and return HTML content from sender.
     If download_path is provided, also writes HTML to that file.
     """
-    raw_payload = _secure_receive_payload(sender_id, package, expected_type="html")
+    raw_payload = _secure_receive_payload(
+        sender_id=sender_id,
+        sender=sender,
+        sender_card=sender_card,
+        receiver=receiver,
+        receiver_identity=receiver_identity,
+        package_input=package,
+        expected_type="html",
+    )
     payload = UXSPPayload.from_bytes(raw_payload)
     html_text = payload.body.decode(payload.encoding or "utf-8")
     if download_path is not None:
@@ -927,14 +1208,17 @@ def ReceiveHTML(
 
 
 def SendArchive(
-    receiver_id: str | int,
-    archive_path_or_bytes: str | Path | bytes,
+    receiver_id: str | int | PublicCard | Identity | None = None,
+    archive_path_or_bytes: str | Path | bytes | None = None,
     *,
+    receiver: str | int | PublicCard | Identity | None = None,
+    sender: Identity | None = None,
+    sender_identity: Identity | None = None,
     filename: str | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> SecurePackage:
-    """Encrypt and send a zip/tar archive to receiver_id."""
+    """Encrypt and send a zip/tar archive to receiver."""
     if isinstance(archive_path_or_bytes, (str, Path)):
         if not _safe_is_file(archive_path_or_bytes):
             raise SecureSendError(f"File not found: {archive_path_or_bytes}")
@@ -949,17 +1233,37 @@ def SendArchive(
         raise SecureSendError("archive_path_or_bytes must be a file path or bytes.")
 
     return _secure_send_payload(
-        receiver_id, packed, "archive", output_file=output_file, metadata=metadata
+        receiver_id=receiver_id,
+        receiver=receiver,
+        sender=sender,
+        sender_identity=sender_identity,
+        payload_bytes=packed,
+        data_type="archive",
+        output_file=output_file,
+        metadata=metadata,
     )
 
 
 def ReceiveArchive(
-    sender_id: str | int,
+    sender_id: str | int | PublicCard | Identity | None = None,
     download_path: str | Path | None = None,
     package: Any = None,
+    *,
+    sender: str | int | PublicCard | Identity | None = None,
+    sender_card: PublicCard | Identity | None = None,
+    receiver: Identity | None = None,
+    receiver_identity: Identity | None = None,
 ) -> Path:
-    """Receive, decrypt, and save an archive from sender_id."""
-    raw_payload = _secure_receive_payload(sender_id, package, expected_type="archive")
+    """Receive, decrypt, and save an archive from sender."""
+    raw_payload = _secure_receive_payload(
+        sender_id=sender_id,
+        sender=sender,
+        sender_card=sender_card,
+        receiver=receiver,
+        receiver_identity=receiver_identity,
+        package_input=package,
+        expected_type="archive",
+    )
     payload = UXSPPayload.from_bytes(raw_payload)
     default_name = payload.filename or "received_archive.zip"
     target_file = _resolve_download_target(download_path, default_name)
@@ -975,14 +1279,17 @@ ReceiveZip = ReceiveArchive
 
 
 def SendVoice(
-    receiver_id: str | int,
-    voice_path_or_bytes: str | Path | bytes,
+    receiver_id: str | int | PublicCard | Identity | None = None,
+    voice_path_or_bytes: str | Path | bytes | None = None,
     *,
+    receiver: str | int | PublicCard | Identity | None = None,
+    sender: Identity | None = None,
+    sender_identity: Identity | None = None,
     duration_seconds: float | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> SecurePackage:
-    """Encrypt and send a voice note/message to receiver_id."""
+    """Encrypt and send a voice note/message to receiver."""
     meta = metadata or {}
     if duration_seconds is not None:
         meta["duration_seconds"] = duration_seconds
@@ -998,17 +1305,37 @@ def SendVoice(
         raise SecureSendError("voice_path_or_bytes must be a file path or bytes.")
 
     return _secure_send_payload(
-        receiver_id, packed, "voice", output_file=output_file, metadata=meta
+        receiver_id=receiver_id,
+        receiver=receiver,
+        sender=sender,
+        sender_identity=sender_identity,
+        payload_bytes=packed,
+        data_type="voice",
+        output_file=output_file,
+        metadata=meta,
     )
 
 
 def ReceiveVoice(
-    sender_id: str | int,
+    sender_id: str | int | PublicCard | Identity | None = None,
     download_path: str | Path | None = None,
     package: Any = None,
+    *,
+    sender: str | int | PublicCard | Identity | None = None,
+    sender_card: PublicCard | Identity | None = None,
+    receiver: Identity | None = None,
+    receiver_identity: Identity | None = None,
 ) -> Path:
-    """Receive, decrypt, and save a voice note from sender_id."""
-    raw_payload = _secure_receive_payload(sender_id, package, expected_type="voice")
+    """Receive, decrypt, and save a voice note from sender."""
+    raw_payload = _secure_receive_payload(
+        sender_id=sender_id,
+        sender=sender,
+        sender_card=sender_card,
+        receiver=receiver,
+        receiver_identity=receiver_identity,
+        package_input=package,
+        expected_type="voice",
+    )
     payload = UXSPPayload.from_bytes(raw_payload)
     default_name = payload.filename or "received_voice.ogg"
     target_file = _resolve_download_target(download_path, default_name)
@@ -1020,15 +1347,18 @@ def ReceiveVoice(
 
 
 def SendLocation(
-    receiver_id: str | int,
-    latitude: float,
-    longitude: float,
+    receiver_id: str | int | PublicCard | Identity | None = None,
+    latitude: float = 0.0,
+    longitude: float = 0.0,
     *,
+    receiver: str | int | PublicCard | Identity | None = None,
+    sender: Identity | None = None,
+    sender_identity: Identity | None = None,
     description: str | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> SecurePackage:
-    """Encrypt and send geographic coordinates to receiver_id."""
+    """Encrypt and send geographic coordinates to receiver."""
     if not (-90.0 <= latitude <= 90.0):
         raise SecureSendError(f"Invalid latitude {latitude}: must be between -90.0 and +90.0")
     if not (-180.0 <= longitude <= 180.0):
@@ -1046,16 +1376,36 @@ def SendLocation(
         encoding="utf-8",
     )
     return _secure_send_payload(
-        receiver_id, payload.to_bytes(), "location", output_file=output_file, metadata=metadata
+        receiver_id=receiver_id,
+        receiver=receiver,
+        sender=sender,
+        sender_identity=sender_identity,
+        payload_bytes=payload.to_bytes(),
+        data_type="location",
+        output_file=output_file,
+        metadata=metadata,
     )
 
 
 def ReceiveLocation(
-    sender_id: str | int,
+    sender_id: str | int | PublicCard | Identity | None = None,
     package: Any = None,
+    *,
+    sender: str | int | PublicCard | Identity | None = None,
+    sender_card: PublicCard | Identity | None = None,
+    receiver: Identity | None = None,
+    receiver_identity: Identity | None = None,
 ) -> dict[str, Any]:
-    """Receive, decrypt, and return location data dictionary from sender_id."""
-    raw_payload = _secure_receive_payload(sender_id, package, expected_type="location")
+    """Receive, decrypt, and return location data dictionary from sender."""
+    raw_payload = _secure_receive_payload(
+        sender_id=sender_id,
+        sender=sender,
+        sender_card=sender_card,
+        receiver=receiver,
+        receiver_identity=receiver_identity,
+        package_input=package,
+        expected_type="location",
+    )
     payload = UXSPPayload.from_bytes(raw_payload)
     return cast(dict[str, Any], json.loads(payload.body.decode("utf-8")))
 
@@ -1064,13 +1414,16 @@ def ReceiveLocation(
 
 
 def SendContact(
-    receiver_id: str | int,
-    contact_data: dict[str, Any] | str,
+    receiver_id: str | int | PublicCard | Identity | None = None,
+    contact_data: dict[str, Any] | str = "",
     *,
+    receiver: str | int | PublicCard | Identity | None = None,
+    sender: Identity | None = None,
+    sender_identity: Identity | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> SecurePackage:
-    """Encrypt and send a contact card/info to receiver_id."""
+    """Encrypt and send a contact card/info to receiver."""
     if isinstance(contact_data, dict):
         body_bytes = json.dumps(contact_data).encode("utf-8")
         ctype = "application/vnd.uxsp.contact+json"
@@ -1087,16 +1440,36 @@ def SendContact(
         encoding="utf-8",
     )
     return _secure_send_payload(
-        receiver_id, payload.to_bytes(), "contact", output_file=output_file, metadata=metadata
+        receiver_id=receiver_id,
+        receiver=receiver,
+        sender=sender,
+        sender_identity=sender_identity,
+        payload_bytes=payload.to_bytes(),
+        data_type="contact",
+        output_file=output_file,
+        metadata=metadata,
     )
 
 
 def ReceiveContact(
-    sender_id: str | int,
+    sender_id: str | int | PublicCard | Identity | None = None,
     package: Any = None,
+    *,
+    sender: str | int | PublicCard | Identity | None = None,
+    sender_card: PublicCard | Identity | None = None,
+    receiver: Identity | None = None,
+    receiver_identity: Identity | None = None,
 ) -> dict[str, Any] | str:
-    """Receive, decrypt, and return contact information from sender_id."""
-    raw_payload = _secure_receive_payload(sender_id, package, expected_type="contact")
+    """Receive, decrypt, and return contact information from sender."""
+    raw_payload = _secure_receive_payload(
+        sender_id=sender_id,
+        sender=sender,
+        sender_card=sender_card,
+        receiver=receiver,
+        receiver_identity=receiver_identity,
+        package_input=package,
+        expected_type="contact",
+    )
     payload = UXSPPayload.from_bytes(raw_payload)
     raw_text = payload.body.decode("utf-8")
     try:
@@ -1109,9 +1482,12 @@ def ReceiveContact(
 
 
 def Send(
-    receiver_id: str | int,
-    item: Any,
+    receiver_id: str | int | PublicCard | Identity | None = None,
+    item: Any = None,
     *,
+    receiver: str | int | PublicCard | Identity | None = None,
+    sender: Identity | None = None,
+    sender_identity: Identity | None = None,
     data_type: str | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
@@ -1120,108 +1496,119 @@ def Send(
     Polymorphic sender: automatically inspects `item` and routes to the correct
     specialized Send* function.
     """
+    rec = receiver if receiver is not None else receiver_id
+    snd = sender if sender is not None else sender_identity
+
     if data_type is not None:
         dt = data_type.lower()
         if dt == "video":
-            return SendVideo(receiver_id, item, output_file=output_file, metadata=metadata)
+            return SendVideo(receiver=rec, video_path_or_bytes=item, sender=snd, output_file=output_file, metadata=metadata)
         if dt == "audio":
-            return SendAudio(receiver_id, item, output_file=output_file, metadata=metadata)
+            return SendAudio(receiver=rec, audio_path_or_bytes=item, sender=snd, output_file=output_file, metadata=metadata)
         if dt in {"photo", "image"}:
-            return SendPhoto(receiver_id, item, output_file=output_file, metadata=metadata)
+            return SendPhoto(receiver=rec, photo_path_or_bytes=item, sender=snd, output_file=output_file, metadata=metadata)
         if dt == "text":
-            return SendText(receiver_id, item, output_file=output_file, metadata=metadata)
+            return SendText(receiver=rec, text=item, sender=snd, output_file=output_file, metadata=metadata)
         if dt in {"document", "doc"}:
-            return SendDocument(receiver_id, item, output_file=output_file, metadata=metadata)
+            return SendDocument(receiver=rec, doc_path_or_bytes=item, sender=snd, output_file=output_file, metadata=metadata)
         if dt == "pdf":
-            return SendPDF(receiver_id, item, output_file=output_file, metadata=metadata)
+            return SendPDF(receiver=rec, pdf_path_or_bytes=item, sender=snd, output_file=output_file, metadata=metadata)
         if dt in {"archive", "zip"}:
-            return SendArchive(receiver_id, item, output_file=output_file, metadata=metadata)
+            return SendArchive(receiver=rec, archive_path_or_bytes=item, sender=snd, output_file=output_file, metadata=metadata)
         if dt == "voice":
-            return SendVoice(receiver_id, item, output_file=output_file, metadata=metadata)
+            return SendVoice(receiver=rec, voice_path_or_bytes=item, sender=snd, output_file=output_file, metadata=metadata)
         if dt == "json":
-            return SendJSON(receiver_id, item, output_file=output_file, metadata=metadata)
+            return SendJSON(receiver=rec, data=item, sender=snd, output_file=output_file, metadata=metadata)
         if dt == "html":
-            return SendHTML(receiver_id, item, output_file=output_file, metadata=metadata)
+            return SendHTML(receiver=rec, html_content=item, sender=snd, output_file=output_file, metadata=metadata)
         if dt == "contact":
-            return SendContact(receiver_id, item, output_file=output_file, metadata=metadata)
+            return SendContact(receiver=rec, contact_data=item, sender=snd, output_file=output_file, metadata=metadata)
         if dt == "binary":
-            return SendBinary(receiver_id, item, output_file=output_file, metadata=metadata)
+            return SendBinary(receiver=rec, data=item, sender=snd, output_file=output_file, metadata=metadata)
         if dt == "file":
-            return SendFile(receiver_id, item, output_file=output_file, metadata=metadata)
+            return SendFile(receiver=rec, file_path_or_bytes=item, sender=snd, output_file=output_file, metadata=metadata)
 
     if isinstance(item, (str, Path)):
         if _safe_is_file(item):
             p = Path(item)
             ext = p.suffix.lower()
             if ext in {".mp4", ".mkv", ".avi", ".mov", ".webm"}:
-                return SendVideo(receiver_id, p, output_file=output_file, metadata=metadata)
+                return SendVideo(receiver=rec, video_path_or_bytes=p, sender=snd, output_file=output_file, metadata=metadata)
             if ext in {".mp3", ".wav", ".aac", ".flac", ".m4a"}:
-                return SendAudio(receiver_id, p, output_file=output_file, metadata=metadata)
+                return SendAudio(receiver=rec, audio_path_or_bytes=p, sender=snd, output_file=output_file, metadata=metadata)
             if ext in {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"}:
-                return SendPhoto(receiver_id, p, output_file=output_file, metadata=metadata)
+                return SendPhoto(receiver=rec, photo_path_or_bytes=p, sender=snd, output_file=output_file, metadata=metadata)
             if ext == ".pdf":
-                return SendPDF(receiver_id, p, output_file=output_file, metadata=metadata)
+                return SendPDF(receiver=rec, pdf_path_or_bytes=p, sender=snd, output_file=output_file, metadata=metadata)
             if ext in {".zip", ".tar", ".gz", ".7z", ".bz2"}:
-                return SendArchive(receiver_id, p, output_file=output_file, metadata=metadata)
+                return SendArchive(receiver=rec, archive_path_or_bytes=p, sender=snd, output_file=output_file, metadata=metadata)
             if ext in {".html", ".htm"}:
-                return SendHTML(receiver_id, p.read_text(encoding="utf-8"), output_file=output_file, metadata=metadata)
+                return SendHTML(receiver=rec, html_content=p.read_text(encoding="utf-8"), sender=snd, output_file=output_file, metadata=metadata)
             if ext == ".json":
-                return SendJSON(receiver_id, json.loads(p.read_text(encoding="utf-8")), output_file=output_file, metadata=metadata)
-            return SendFile(receiver_id, p, output_file=output_file, metadata=metadata)
+                return SendJSON(receiver=rec, data=json.loads(p.read_text(encoding="utf-8")), sender=snd, output_file=output_file, metadata=metadata)
+            return SendFile(receiver=rec, file_path_or_bytes=p, sender=snd, output_file=output_file, metadata=metadata)
         elif isinstance(item, str):
-            return SendText(receiver_id, item, output_file=output_file, metadata=metadata)
+            return SendText(receiver=rec, text=item, sender=snd, output_file=output_file, metadata=metadata)
 
     if isinstance(item, (dict, list)):
-        return SendJSON(receiver_id, item, output_file=output_file, metadata=metadata)
+        return SendJSON(receiver=rec, data=item, sender=snd, output_file=output_file, metadata=metadata)
 
     if isinstance(item, (bytes, bytearray)):
-        return SendBinary(receiver_id, item, output_file=output_file, metadata=metadata)
+        return SendBinary(receiver=rec, data=item, sender=snd, output_file=output_file, metadata=metadata)
 
     raise SecureSendError(f"Cannot automatically infer data type for item of type {type(item).__name__}")
 
 
 def Receive(
-    sender_id: str | int,
+    sender_id: str | int | PublicCard | Identity | None = None,
     package: Any = None,
     download_path: str | Path | None = None,
+    *,
+    sender: str | int | PublicCard | Identity | None = None,
+    sender_card: PublicCard | Identity | None = None,
+    receiver: Identity | None = None,
+    receiver_identity: Identity | None = None,
 ) -> Any:
     """
     Polymorphic receiver: automatically detects data_type from the secure package
     and dispatches to the matching Receive* handler.
     """
+    snd = sender_card if sender_card is not None else (sender if sender is not None else sender_id)
+    rec = receiver if receiver is not None else receiver_identity
     pkg = _resolve_package_input(package)
     dt = pkg.data_type.lower()
+
     if dt == "video":
-        return ReceiveVideo(sender_id, download_path=download_path, package=pkg)
+        return ReceiveVideo(sender=snd, download_path=download_path, package=pkg, receiver=rec)
     if dt == "audio":
-        return ReceiveAudio(sender_id, download_path=download_path, package=pkg)
+        return ReceiveAudio(sender=snd, download_path=download_path, package=pkg, receiver=rec)
     if dt in {"photo", "image"}:
-        return ReceivePhoto(sender_id, download_path=download_path, package=pkg)
+        return ReceivePhoto(sender=snd, download_path=download_path, package=pkg, receiver=rec)
     if dt == "text":
-        return ReceiveText(sender_id, package=pkg, download_path=download_path)
+        return ReceiveText(sender=snd, package=pkg, download_path=download_path, receiver=rec)
     if dt in {"document", "doc"}:
-        return ReceiveDocument(sender_id, download_path=download_path, package=pkg)
+        return ReceiveDocument(sender=snd, download_path=download_path, package=pkg, receiver=rec)
     if dt == "pdf":
-        return ReceivePDF(sender_id, download_path=download_path, package=pkg)
+        return ReceivePDF(sender=snd, download_path=download_path, package=pkg, receiver=rec)
     if dt == "file":
-        return ReceiveFile(sender_id, download_path=download_path, package=pkg)
+        return ReceiveFile(sender=snd, download_path=download_path, package=pkg, receiver=rec)
     if dt == "binary":
-        return ReceiveBinary(sender_id, package=pkg, download_path=download_path)
+        return ReceiveBinary(sender=snd, package=pkg, download_path=download_path, receiver=rec)
     if dt == "json":
-        return ReceiveJSON(sender_id, package=pkg, download_path=download_path)
+        return ReceiveJSON(sender=snd, package=pkg, download_path=download_path, receiver=rec)
     if dt == "html":
-        return ReceiveHTML(sender_id, package=pkg, download_path=download_path)
+        return ReceiveHTML(sender=snd, package=pkg, download_path=download_path, receiver=rec)
     if dt in {"archive", "zip"}:
-        return ReceiveArchive(sender_id, download_path=download_path, package=pkg)
+        return ReceiveArchive(sender=snd, download_path=download_path, package=pkg, receiver=rec)
     if dt == "voice":
-        return ReceiveVoice(sender_id, download_path=download_path, package=pkg)
+        return ReceiveVoice(sender=snd, download_path=download_path, package=pkg, receiver=rec)
     if dt == "location":
-        return ReceiveLocation(sender_id, package=pkg)
+        return ReceiveLocation(sender=snd, package=pkg, receiver=rec)
     if dt == "contact":
-        return ReceiveContact(sender_id, package=pkg)
+        return ReceiveContact(sender=snd, package=pkg, receiver=rec)
 
     # Fallback to generic payload or raw binary unpack
-    raw = _secure_receive_payload(sender_id, pkg)
+    raw = _secure_receive_payload(sender=snd, package_input=pkg, receiver=rec)
     try:
         payload = UXSPPayload.from_bytes(raw)
         data_to_write = payload.body

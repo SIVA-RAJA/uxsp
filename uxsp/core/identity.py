@@ -237,26 +237,21 @@ class Identity:
         return decrypt_verified_envelope(verified, self.keypair)
 
     # ─────────────────────────────────────────
-    # SAVE / LOAD — encrypted key storage
+    # SAVE / LOAD & ENCRYPTED SERIALIZATION
     # ─────────────────────────────────────────
 
-    def save(self, path: str, password: str) -> None:
+    def to_encrypted_dict(self, password: str) -> dict[str, Any]:
         """
-        Encrypt and persist this identity to disk.
+        Encrypt private keys and serialize this identity to a dictionary.
 
         Derives an AES-256-GCM key from the password using Argon2id, binds the
-        encryption to all public metadata fields as AES-GCM associated data
-        (so tampering with the public section is detected on load), and writes
-        the result as a JSON file.  The file is written atomically via a
-        temp-file-then-rename pattern to prevent corruption on crash.
+        encryption to all public metadata fields as AES-GCM associated data,
+        and returns a dictionary containing public metadata and encrypted private key material.
         """
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-
         from uxsp.crypto.kdf import derive_key_from_password
 
         kdf_result = derive_key_from_password(password)
 
-        # serialise all private keys
         private_data = json.dumps(
             {
                 "exchange_priv": self.keypair["exchange"]["private_key"].hex(),
@@ -266,9 +261,6 @@ class Identity:
             }
         ).encode()
 
-        # build public metadata first so AES-GCM associated data can bind it.
-        # Public fields remain readable, but tampering with them makes private
-        # key decryption fail on load.
         payload = {
             "version": self._VERSION,
             "entity_id": self.entity_id,
@@ -294,70 +286,60 @@ class Identity:
             "kdf_salt": kdf_result["salt"].hex(),
             "associated_data": "public-metadata-v1",
         }
+        return payload
 
-        tmp_fd, tmp_path = tempfile.mkstemp(dir=str(Path(path).parent))
-        try:
-            with os.fdopen(tmp_fd, "w") as f:
-                json.dump(payload, f, indent=2)
-            os.replace(tmp_path, path)
-        except BaseException:
-            with contextlib.suppress(OSError):
-                os.unlink(tmp_path)
-            raise
+    def to_encrypted_json(self, password: str, indent: int | None = None) -> str:
+        """Serialize identity to an encrypted JSON string protected by password."""
+        return json.dumps(self.to_encrypted_dict(password), indent=indent)
+
+    export_encrypted = to_encrypted_json
 
     @classmethod
-    def load(cls, path: str, password: str) -> "Identity":
-        """
-        Load and decrypt an identity from a file previously created by save().
-
-        Reads the JSON file, re-derives the AES-GCM key from the password and
-        the stored Argon2id salt, decrypts the private key block (verifying the
-        associated-data binding), and reconstructs the full keypair.
-        Raises ValueError for wrong password, corrupted file, or unknown version.
-        """
-        with open(path) as f:
-            payload = json.load(f)
+    def from_encrypted_dict(cls, payload: dict[str, Any], password: str) -> "Identity":
+        """Reconstruct an Identity from an encrypted dictionary payload and password."""
+        if not isinstance(payload, dict):
+            raise ValueError("Payload must be a dictionary.")
 
         if payload.get("version") != cls._VERSION:
             raise ValueError(f"Unknown identity file version: {payload.get('version')}")
 
-        enc_priv = payload["encrypted_private"]
+        enc_priv = payload.get("encrypted_private")
+        if not isinstance(enc_priv, dict):
+            raise ValueError("Identity payload missing encrypted_private section.")
+
         from uxsp.crypto.kdf import derive_key_from_password
 
         try:
             _salt = bytes.fromhex(enc_priv["kdf_salt"])
         except (KeyError, TypeError, ValueError) as e:
-            raise ValueError("Identity file has invalid encrypted_private metadata.") from e
+            raise ValueError("invalid encrypted_private metadata") from e
+
         kdf_result = derive_key_from_password(password, salt=_salt)
 
         try:
             if enc_priv.get("associated_data") == "public-metadata-v1":
                 associated_data = _identity_associated_data(payload)
             else:
-                # Legacy UXSP 0.1 identity files bound only entity_id. New saves bind
-                # all public metadata; this fallback preserves loading of old keys.
                 associated_data = payload["entity_id"].encode()
         except KeyError as e:
-            raise ValueError(f"Identity file missing required metadata field: {e}") from e
+            raise ValueError(f"missing required metadata field: {e}") from e
 
         try:
             ct = bytes.fromhex(enc_priv["ciphertext"])
             nonce = bytes.fromhex(enc_priv["nonce"])
-        except (KeyError, ValueError) as e:
-            raise ValueError("Identity file encrypted_private block is malformed.") from e
+        except (KeyError, TypeError, ValueError) as e:
+            raise ValueError("encrypted_private block is malformed.") from e
 
         try:
             private_data = decrypt(ct, nonce, kdf_result["key"], associated_data=associated_data)
-        except ValueError as e:
-            raise ValueError(
-                "Failed to decrypt identity file. Wrong password or corrupted file."
-            ) from e
+        except Exception as exc:
+            raise ValueError("Wrong password or corrupted file.") from exc
 
         try:
             priv = json.loads(private_data.decode())
             pub = payload["public_keys"]
         except (UnicodeDecodeError, json.JSONDecodeError, KeyError) as e:
-            raise ValueError("Identity file private key payload is malformed.") from e
+            raise ValueError("private key payload is malformed.") from e
 
         try:
             keypair = {
@@ -379,7 +361,7 @@ class Identity:
                 },
             }
         except (KeyError, TypeError, ValueError) as e:
-            raise ValueError("Identity file contains malformed key material.") from e
+            raise ValueError("malformed key material") from e
 
         return cls(
             entity_id=payload["entity_id"],
@@ -388,6 +370,60 @@ class Identity:
             keypair=keypair,
             created_at=payload["created_at"],
         )
+
+    @classmethod
+    def from_encrypted_json(cls, encrypted_json: str | bytes, password: str) -> "Identity":
+        """Deserialize an Identity from an encrypted JSON string or bytes."""
+        if isinstance(encrypted_json, bytes):
+            encrypted_json = encrypted_json.decode("utf-8")
+        try:
+            data = json.loads(encrypted_json)
+        except Exception as e:
+            raise ValueError(f"Failed to parse encrypted JSON: {e}") from e
+        return cls.from_encrypted_dict(data, password)
+
+    import_encrypted = from_encrypted_json
+
+    def save(self, path: str, password: str) -> None:
+        """
+        Encrypt and persist this identity to disk.
+        Atomic write using temporary file.
+        """
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        payload = self.to_encrypted_dict(password)
+
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=str(Path(path).parent))
+        try:
+            with os.fdopen(tmp_fd, "w") as f:
+                json.dump(payload, f, indent=2)
+            os.replace(tmp_path, path)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp_path)
+            raise
+
+    @classmethod
+    def load(cls, path: str, password: str) -> "Identity":
+        """Load and decrypt an identity from a file previously created by save()."""
+        with open(path) as f:
+            payload = json.load(f)
+        return cls.from_encrypted_dict(payload, password)
+
+    # ─────────────────────────────────────────
+    # PASSWORD HASHING HELPERS
+    # ─────────────────────────────────────────
+
+    @staticmethod
+    def hash_password(password: str) -> str:
+        """Hash a password using Argon2id."""
+        from uxsp.crypto.kdf import argon2id_hash
+        return argon2id_hash(password)
+
+    @staticmethod
+    def verify_password(stored_hash: str, password: str) -> bool:
+        """Verify a password against an Argon2id PHC string hash."""
+        from uxsp.crypto.kdf import argon2id_verify
+        return argon2id_verify(stored_hash, password)
 
     # ─────────────────────────────────────────
     # UTILITIES

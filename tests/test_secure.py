@@ -1083,3 +1083,88 @@ class TestConfigurationAndPolymorphicDispatch:
         assert res_custom_file.exists()
         assert res_custom_file.read_text(encoding="utf-8") == "fallback custom 2"
 
+
+class TestDirectObjectPassingAndMemoryHelpers:
+    """
+    Tests for the streamlined, stateless workflow where Identity and PublicCard objects
+    are passed directly into Send* and Receive* functions without global state.
+    """
+
+    def test_in_memory_identity_export_import(self):
+        alice = uxsp.create_identity("Alice", role="CLIENT")
+        assert alice.name == "Alice"
+        assert alice.role == "CLIENT"
+
+        # Encrypted serialization
+        password = "SuperSecretPassword123!"
+        encrypted_json = uxsp.export_identity_encrypted(alice, password)
+        assert isinstance(encrypted_json, str)
+        assert "UXSP-IDENTITY-1" in encrypted_json
+
+        # Encrypted deserialization
+        restored = uxsp.import_identity_encrypted(encrypted_json, password)
+        assert restored.entity_id == alice.entity_id
+        assert restored.name == "Alice"
+        assert restored.role == "CLIENT"
+
+        # Wrong password raises error
+        with pytest.raises(ValueError, match="Wrong password"):
+            uxsp.import_identity_encrypted(encrypted_json, "WrongPassword")
+
+    def test_password_hashing_helpers(self):
+        password = "my_secure_password"
+        hashed = uxsp.hash_password(password)
+        assert hashed.startswith("$argon2id$")
+
+        assert uxsp.verify_password(hashed, password) is True
+        assert uxsp.verify_password(hashed, "wrong_password") is False
+
+    def test_direct_identity_and_card_passing_stateless(self):
+        """
+        Verify sending and receiving payloads directly by passing Identity and PublicCard objects
+        without calling global configure(), set_identity(), or register_peer().
+        """
+        alice = uxsp.create_identity("Alice", role="CLIENT")
+        bob = uxsp.create_identity("Bob", role="SERVER")
+
+        # Alice sends to Bob using Bob's PublicCard directly (or Bob's Identity)
+        message = "Direct stateless message test!"
+        pkg = SendText(
+            receiver=bob.public_card(),
+            text=message,
+            sender=alice,
+        )
+
+        assert pkg.sender_id == alice.entity_id
+        assert pkg.receiver_id == bob.entity_id
+
+        # Bob receives message using Alice's PublicCard and Bob's Identity directly
+        received_text = ReceiveText(
+            sender=alice.public_card(),
+            package=pkg,
+            receiver=bob,
+        )
+        assert received_text == message
+
+    def test_direct_object_passing_polymorphic(self):
+        alice = uxsp.create_identity("Alice", role="CLIENT")
+        bob = uxsp.create_identity("Bob", role="SERVER")
+
+        payload_dict = {"event": "USER_LOGIN", "user_id": 42}
+
+        # Send via polymorphic Send with Identity/PublicCard arguments
+        pkg = Send(
+            receiver=bob,
+            item=payload_dict,
+            sender=alice,
+        )
+
+        # Receive via polymorphic Receive with Identity/PublicCard arguments
+        received_dict = Receive(
+            sender=alice,
+            package=pkg,
+            receiver=bob,
+        )
+        assert received_dict == payload_dict
+
+

@@ -252,6 +252,11 @@ from uxsp.secure import (
     SendVoice,
     SendZip,
     TypeMismatchError,
+    create_identity,
+    export_identity_encrypted,
+    hash_password,
+    import_identity_encrypted,
+    verify_password,
 )
 
 # ─────────────────────────────────────────────
@@ -260,6 +265,11 @@ from uxsp.secure import (
 __all__ = [
     # simplified workflow (secure)
     "secure",
+    "create_identity",
+    "hash_password",
+    "verify_password",
+    "export_identity_encrypted",
+    "import_identity_encrypted",
     "SecurePackage",
     "SecureContext",
     "SecureError",
