@@ -22,6 +22,7 @@ parts/
 sdist/
 var/
 wheels/
+*.whl
 share/python-wheels/
 *.egg-info/
 .installed.cfg
@@ -43,21 +44,45 @@ coverage.xml
 .pytest_cache/**
 pytest_cache/
 pytestdebug.log
+.benchmarks/
 
-# Sphinx documentation
+# Documentation
 docs/_build/
+site/
 
 # Jupyter Notebook
 .ipynb_checkpoints
 
-# Environments
+# Environments and Local Settings
 .env
+.env.*
 .venv
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+.python-version
+
+# Cryptographic Keys & Certificates
+*.pem
+*.crt
+*.key
+*.pub
+*.p12
+*.pfx
+
+# SQLite & Database files
+*.sqlite
+*.sqlite3
+*.db
+
+# Logs and Temporary files
+*.log
+*.tmp
+*.temp
+*.bak
+*~
 
 # mypy
 .mypy_cache/

@@ -421,9 +421,9 @@ __all__ = [
     "seal",
     "open_seal",
     "derive_key",
-    "argon2id_hash",
-    "argon2id_verify",
-    "argon2id_needs_rehash",
     # meta
     "__version__",
+    "aio",
 ]
+
+from uxsp import aio
