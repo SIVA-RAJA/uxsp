@@ -139,6 +139,10 @@ python_version         = "3.11"
 strict                 = true
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = "uxsp.contrib.*"
+disallow_subclassing_any = false
+
 # ── Pyright (type checker) ────────────────────────────────────────────────────
 
 [tool.pyright]
