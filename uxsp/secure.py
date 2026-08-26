@@ -37,7 +37,7 @@ from uxsp.core.chunking import (
     reassemble_chunked_transfer,
 )
 from uxsp.core.envelope import Envelope
-from uxsp.core.identity import Identity, PublicCard
+from uxsp.core.identity import CardExpiredError, CardRevokedError, Identity, PublicCard
 from uxsp.core.nonce import MemoryNonceStore, NonceStore
 from uxsp.core.payload import (
     UXSPPayload,
@@ -227,9 +227,9 @@ class SecureContext:
                 card = peer_card_or_identity
             self._keystore.put(card)
 
-    def get_peer(self, entity_id: str | int) -> PublicCard:
+    def get_peer(self, entity_id: str | int | PublicCard | Identity) -> PublicCard:
         """Retrieve a registered peer's PublicCard."""
-        eid = str(entity_id)
+        eid = _normalize_id(entity_id)
         with self._lock:
             card = self._keystore.get(eid)
             if card is None:
@@ -240,6 +240,15 @@ class SecureContext:
             if isinstance(card, PublicCard):
                 return card
             return card.card
+
+    def revoke_peer(self, peer: str | int | PublicCard | Identity, reason: str = "Key compromised") -> PublicCard:
+        """Mark a registered peer's PublicCard as revoked."""
+        eid = _normalize_id(peer)
+        card = self.get_peer(eid)
+        card.revoke(reason=reason)
+        with self._lock:
+            self._keystore.put(card, overwrite=True)
+        return card
 
     def get_replay_guard(self) -> ReplayGuard:
         """Get the active replay guard."""
@@ -298,7 +307,7 @@ def register_peer(peer_card_or_identity: PublicCard | Identity) -> None:
     _GLOBAL_CONTEXT.register_peer(peer_card_or_identity)
 
 
-def get_peer(entity_id: str | int) -> PublicCard:
+def get_peer(entity_id: str | int | PublicCard | Identity) -> PublicCard:
     """Retrieve a registered peer's PublicCard."""
     return _GLOBAL_CONTEXT.get_peer(entity_id)
 
@@ -311,6 +320,39 @@ def reset_context() -> None:
 def create_identity(name: str, role: str = "CLIENT") -> Identity:
     """Create a brand-new Identity with a freshly generated hybrid keypair."""
     return Identity.create(name=name, role=role)
+
+
+def rotate_keys(identity: Identity | None = None) -> Identity:
+    """
+    Generate a new hybrid keypair for an Identity while preserving entity_id.
+
+    If identity is None, rotates the active global context identity and updates registered keys.
+    """
+    if identity is None:
+        ident = _GLOBAL_CONTEXT.get_identity()
+        ident.rotate_keys()
+        _GLOBAL_CONTEXT.set_identity(ident)
+        return ident
+    return identity.rotate_keys()
+
+
+def revoke_peer(peer: str | int | PublicCard | Identity, reason: str = "Key compromised") -> PublicCard:
+    """Mark a registered peer's PublicCard as revoked."""
+    return _GLOBAL_CONTEXT.revoke_peer(peer, reason=reason)
+
+
+def verify_peer_validity(peer: str | int | PublicCard | Identity) -> None:
+    """Verify that a peer's PublicCard is neither expired nor revoked."""
+    try:
+        card = get_peer(peer)
+    except PeerNotFoundError:
+        if isinstance(peer, PublicCard):
+            card = peer
+        elif isinstance(peer, Identity):
+            card = peer.public_card()
+        else:
+            raise
+    card.verify_validity()
 
 
 def hash_password(password: str) -> str:

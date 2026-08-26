@@ -17,8 +17,58 @@ from pathlib import Path
 from typing import Any
 
 from uxsp.aio.stream import ReceiveStream, SendStream
-from uxsp.core.identity import Identity, PublicCard
-from uxsp.secure import SecurePackage, register_peer, set_identity
+from uxsp.core.identity import CardExpiredError, CardRevokedError, Identity, PublicCard
+from uxsp.secure import (
+    SecurePackage,
+    get_identity as _sync_get_identity,
+    get_peer as _sync_get_peer,
+    register_peer as _sync_register_peer,
+    reset_context as _sync_reset_context,
+    revoke_peer as _sync_revoke_peer,
+    rotate_keys as _sync_rotate_keys,
+    set_identity as _sync_set_identity,
+    verify_peer_validity as _sync_verify_peer_validity,
+)
+
+
+async def set_identity(identity: Identity) -> None:
+    """Asynchronously set the active local identity."""
+    await asyncio.to_thread(_sync_set_identity, identity)
+
+
+async def get_identity() -> Identity:
+    """Asynchronously get the active local identity."""
+    return await asyncio.to_thread(_sync_get_identity)
+
+
+async def register_peer(peer_card_or_identity: PublicCard | Identity) -> None:
+    """Asynchronously register a peer's public card or identity."""
+    await asyncio.to_thread(_sync_register_peer, peer_card_or_identity)
+
+
+async def get_peer(entity_id: str | int) -> PublicCard:
+    """Asynchronously retrieve a registered peer's PublicCard."""
+    return await asyncio.to_thread(_sync_get_peer, entity_id)
+
+
+async def reset_context() -> None:
+    """Asynchronously reset the global context."""
+    await asyncio.to_thread(_sync_reset_context)
+
+
+async def rotate_keys(identity: Identity | None = None) -> Identity:
+    """Asynchronously rotate hybrid keypair for an Identity."""
+    return await asyncio.to_thread(_sync_rotate_keys, identity)
+
+
+async def revoke_peer(peer: str | int | PublicCard | Identity, reason: str = "Key compromised") -> PublicCard:
+    """Asynchronously mark a registered peer's PublicCard as revoked."""
+    return await asyncio.to_thread(_sync_revoke_peer, peer, reason)
+
+
+async def verify_peer_validity(peer: str | int | PublicCard | Identity) -> None:
+    """Asynchronously verify that a peer's PublicCard is neither expired nor revoked."""
+    await asyncio.to_thread(_sync_verify_peer_validity, peer)
 
 
 # ── 1. VIDEO ──────────────────────────────────────────────────

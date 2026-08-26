@@ -1206,4 +1206,72 @@ class TestDirectObjectPassingAndMemoryHelpers:
             uxsp.secure._secure_receive_payload(sender=None)
 
 
+class TestHighLevelIdentityLifecycle:
+
+    def test_rotate_keys_and_revoke_peer(self):
+        uxsp.secure.reset_context()
+        alice = uxsp.create_identity("Alice", role="CLIENT")
+        bob = uxsp.create_identity("Bob", role="SERVER")
+
+        uxsp.set_identity(alice)
+        uxsp.register_peer(bob)
+
+        # Rotate active identity keys
+        rotated_alice = uxsp.rotate_keys()
+        assert rotated_alice.entity_id == alice.entity_id
+        assert rotated_alice.key_version == 2
+
+        # Rotate explicit identity
+        rotated_bob = uxsp.rotate_keys(bob)
+        assert rotated_bob.entity_id == bob.entity_id
+        assert rotated_bob.key_version == 2
+
+        # Verify peer validity
+        uxsp.verify_peer_validity(bob)
+
+        # Unregistered identity/card verify_peer_validity branches
+        unregistered = uxsp.create_identity("Unregistered", role="CLIENT")
+        uxsp.verify_peer_validity(unregistered)
+        uxsp.verify_peer_validity(unregistered.public_card())
+        with pytest.raises(uxsp.PeerNotFoundError):
+            uxsp.verify_peer_validity("nonexistent_id")
+
+        # Revoke peer
+        revoked_card = uxsp.revoke_peer(bob, reason="Security audit")
+        assert revoked_card.is_revoked
+        assert revoked_card.revocation_reason == "Security audit"
+
+        with pytest.raises(uxsp.CardRevokedError, match="has been revoked"):
+            uxsp.verify_peer_validity(bob)
+
+    @pytest.mark.asyncio
+    async def test_async_rotate_keys_and_revoke_peer(self):
+        import uxsp.aio
+        await uxsp.aio.reset_context()
+        alice = uxsp.create_identity("Alice", role="CLIENT")
+        bob = uxsp.create_identity("Bob", role="SERVER")
+
+        await uxsp.aio.set_identity(alice)
+        assert (await uxsp.aio.get_identity()).entity_id == alice.entity_id
+
+        await uxsp.aio.register_peer(bob)
+        assert (await uxsp.aio.get_peer(bob)).entity_id == bob.entity_id
+
+        # Async rotate
+        rotated = await uxsp.aio.rotate_keys(bob)
+        assert rotated.key_version == 2
+
+        # Async verify
+        await uxsp.aio.verify_peer_validity(bob)
+
+        # Async revoke
+        revoked = await uxsp.aio.revoke_peer(bob, reason="Compromised")
+        assert revoked.is_revoked
+
+        with pytest.raises(uxsp.aio.CardRevokedError):
+            await uxsp.aio.verify_peer_validity(bob)
+
+
+
+
 

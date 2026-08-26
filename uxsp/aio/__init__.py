@@ -6,6 +6,8 @@ ASGI frameworks (FastAPI, Starlette, Quart) and WebSocket connections.
 """
 
 from uxsp.aio.secure import (
+    CardExpiredError,
+    CardRevokedError,
     Receive,
     ReceiveArchive,
     ReceiveAudio,
@@ -42,6 +44,14 @@ from uxsp.aio.secure import (
     SendVideo,
     SendVoice,
     SendZip,
+    get_identity,
+    get_peer,
+    register_peer,
+    reset_context,
+    revoke_peer,
+    rotate_keys,
+    set_identity,
+    verify_peer_validity,
 )
 from uxsp.aio.stream import (
     ReceiveStream,
@@ -90,6 +100,16 @@ __all__ = [
     "Receive",
     "SendStream",
     "ReceiveStream",
+    "set_identity",
+    "get_identity",
+    "register_peer",
+    "get_peer",
+    "reset_context",
+    "rotate_keys",
+    "revoke_peer",
+    "verify_peer_validity",
+    "CardExpiredError",
+    "CardRevokedError",
     # Async Streaming
     "stream_send_chunks",
     "stream_receive_chunks",

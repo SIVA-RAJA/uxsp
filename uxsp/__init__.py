@@ -74,6 +74,8 @@ from uxsp.core.handshake import (
     HandshakeProofError,
 )
 from uxsp.core.identity import (
+    CardExpiredError,
+    CardRevokedError,
     Identity,
     PublicCard,
     validate_role,
@@ -255,6 +257,14 @@ from uxsp.secure import (
     ReceiveStream,
     TypeMismatchError,
     create_identity,
+    set_identity,
+    get_identity,
+    register_peer,
+    get_peer,
+    reset_context,
+    rotate_keys,
+    revoke_peer,
+    verify_peer_validity,
     export_identity_encrypted,
     hash_password,
     import_identity_encrypted,
@@ -268,6 +278,14 @@ __all__ = [
     # simplified workflow (secure)
     "secure",
     "create_identity",
+    "set_identity",
+    "get_identity",
+    "register_peer",
+    "get_peer",
+    "reset_context",
+    "rotate_keys",
+    "revoke_peer",
+    "verify_peer_validity",
     "hash_password",
     "verify_password",
     "export_identity_encrypted",
@@ -320,6 +338,8 @@ __all__ = [
     # identity
     "Identity",
     "PublicCard",
+    "CardExpiredError",
+    "CardRevokedError",
     "validate_role",
     # envelope
     "Envelope",

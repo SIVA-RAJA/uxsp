@@ -921,3 +921,124 @@ class TestSaveLoadRoundtrip:
         assert loaded.name       == original.name
         assert loaded.role       == original.role
         assert loaded.created_at == original.created_at
+
+
+# ══════════════════════════════════════════════════════════════════
+# 17. Key Rotation & Expiry / Revocation Tests
+# ══════════════════════════════════════════════════════════════════
+
+class TestKeyRotationAndExpiry:
+
+    def test_identity_rotate_keys(self):
+        m = _import()
+        ident = m.Identity.create("Eve", "DEVELOPER")
+        old_id = ident.entity_id
+        old_version = ident.key_version
+        assert ident.keys_rotated_at is None
+
+        # Change mock return value for new keypair
+        new_keypair = {
+            "exchange": {"private_key": b"1" * 32, "public_key": b"1" * 32},
+            "kem":      {"private_key": b"1" * 32, "public_key": b"1" * 32},
+            "signing":  {"private_key": b"1" * 32, "public_key": b"1" * 32},
+            "pqc_sig":  {"private_key": b"1" * 32, "public_key": b"1" * 32},
+        }
+        MOCK_GEN_KEYPAIR.return_value = new_keypair
+
+        rotated = ident.rotate_keys()
+        assert rotated.entity_id == old_id
+        assert rotated.key_version == old_version + 1
+        assert rotated.keys_rotated_at is not None
+        assert rotated.keypair == new_keypair
+
+    def test_public_card_expiration(self):
+        m = _import()
+        ident = m.Identity.create("Frank", "TESTER")
+        
+        # Valid card with TTL
+        card_ttl = ident.public_card(ttl_seconds=3600)
+        assert card_ttl.valid_until is not None
+        assert not card_ttl.is_expired()
+
+        # Expired card
+        past_str = "2020-01-01T00:00:00+00:00"
+        card_expired = ident.public_card(valid_until=past_str)
+        assert card_expired.is_expired()
+        
+        with pytest.raises(m.CardExpiredError, match="expired at"):
+            card_expired.verify_validity()
+
+    def test_public_card_revocation(self):
+        m = _import()
+        card = m.PublicCard("eid-123", "Grace", "USER", _fake_pub_keys(), "2024-01-01")
+        assert not card.is_revoked
+        card.verify_validity()
+
+        card.revoke(reason="Key compromised")
+        assert card.is_revoked
+        assert card.revocation_reason == "Key compromised"
+        assert card.revoked_at is not None
+
+        with pytest.raises(m.CardRevokedError, match="has been revoked"):
+            card.verify_validity()
+
+    def test_seal_and_open_validity_check(self):
+        m = _import()
+        sender = m.Identity.create("Sender", "USER")
+        recipient = m.Identity.create("Recipient", "USER")
+
+        expired_card = recipient.public_card(valid_until="2020-01-01T00:00:00+00:00")
+        with pytest.raises(m.CardExpiredError):
+            sender.seal_for(b"hello", expired_card)
+
+        revoked_card = sender.public_card()
+        revoked_card.revoke("compromised")
+        with pytest.raises(m.CardRevokedError):
+            recipient.open_from({}, revoked_card, MOCK_REPLAY_GUARD)
+
+    def test_card_serialization_preserves_expiry_and_revocation(self):
+        m = _import()
+        card = m.PublicCard(
+            "eid-999", "Heidi", "ADMIN", _fake_pub_keys(), "2024-01-01",
+            valid_until="2030-01-01T00:00:00+00:00",
+            is_revoked=True,
+            revocation_reason="Old key",
+            revoked_at="2025-01-01T00:00:00+00:00",
+            key_version=3,
+        )
+        d = card.to_dict()
+        assert d["revoked_at"] == "2025-01-01T00:00:00+00:00"
+        restored = m.PublicCard.from_dict(d)
+        assert restored.valid_until == "2030-01-01T00:00:00+00:00"
+        assert restored.is_revoked is True
+        assert restored.revocation_reason == "Old key"
+        assert restored.revoked_at == "2025-01-01T00:00:00+00:00"
+        assert restored.key_version == 3
+        assert restored == card
+
+    def test_expiration_and_revocation_edge_cases(self):
+        m = _import()
+        card = m.PublicCard("eid-1", "A", "USER", _fake_pub_keys(), "2024-01-01", valid_until="2025-01-01T00:00:00")
+        
+        # Test now as ISO string
+        assert card.is_expired(now="2026-01-01T00:00:00")
+        assert not card.is_expired(now="2024-06-01T00:00:00")
+
+        # Test now as datetime naive and tz-aware
+        now_dt_tz = datetime(2026, 1, 1, tzinfo=UTC)
+        assert card.is_expired(now=now_dt_tz)
+
+        now_dt_naive = datetime(2026, 1, 1)
+        assert card.is_expired(now=now_dt_naive)
+
+        # Test revoke with datetime objects
+        card.revoke(revoked_at=now_dt_tz)
+        assert card.revoked_at == now_dt_tz.isoformat()
+
+        card.revoke(revoked_at=now_dt_naive)
+        assert card.revoked_at == now_dt_naive.replace(tzinfo=UTC).isoformat()
+
+        card.revoke(revoked_at="custom-time-string")
+        assert card.revoked_at == "custom-time-string"
+
+

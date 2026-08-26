@@ -44,8 +44,18 @@ from uxsp.crypto.hybrid import (
 from uxsp.crypto.symmetric import decrypt, encrypt
 
 # ─────────────────────────────────────────────
-# ROLE VALIDATION — universal, project-agnostic
+# EXCEPTIONS & ROLE VALIDATION
 # ─────────────────────────────────────────────
+
+
+class CardExpiredError(ValueError):
+    """Raised when a PublicCard has expired (past its valid_until timestamp)."""
+    pass
+
+
+class CardRevokedError(ValueError):
+    """Raised when a PublicCard has been revoked."""
+    pass
 
 
 def validate_role(role: str) -> str:
@@ -76,7 +86,7 @@ def validate_role(role: str) -> str:
 
 
 def _identity_public_metadata(payload: dict[str, Any]) -> dict[str, Any]:
-    return {
+    meta = {
         "version": payload["version"],
         "entity_id": payload["entity_id"],
         "name": payload["name"],
@@ -84,6 +94,11 @@ def _identity_public_metadata(payload: dict[str, Any]) -> dict[str, Any]:
         "created_at": payload["created_at"],
         "public_keys": payload["public_keys"],
     }
+    if "key_version" in payload:
+        meta["key_version"] = payload["key_version"]
+    if payload.get("keys_rotated_at"):
+        meta["keys_rotated_at"] = payload["keys_rotated_at"]
+    return meta
 
 
 def _identity_associated_data(payload: dict[str, Any]) -> bytes:
@@ -110,10 +125,11 @@ class Identity:
         role string, and creation timestamp.
 
         Provides:
-          - create()     — Generate a brand-new identity with a fresh keypair.
+          - create()      — Generate a brand-new identity with a fresh keypair.
+          - rotate_keys() — Generate a fresh keypair preserving entity_id.
           - public_card() — Extract the shareable PublicCard (no secrets).
-          - seal_for()   — Encrypt + sign a message for a named recipient.
-          - open_from()  — Decrypt + verify a message from a named sender.
+          - seal_for()    — Encrypt + sign a message for a named recipient.
+          - open_from()   — Decrypt + verify a message from a named sender.
           - save() / load() — Persist / restore the encrypted key file.
 
     Do NOT expose the .keypair dict outside trusted code; it contains raw
@@ -127,6 +143,8 @@ class Identity:
         role: str,
         keypair: dict[str, Any],
         created_at: str | None = None,
+        key_version: int = 1,
+        keys_rotated_at: str | None = None,
     ):
         """Internal. Use Identity.create() or Identity.load()."""
         self.entity_id = entity_id
@@ -134,10 +152,12 @@ class Identity:
         self.role = validate_role(role)
         self.keypair = keypair
         self.created_at: str = created_at or datetime.now(UTC).isoformat()
+        self.key_version: int = key_version
+        self.keys_rotated_at: str | None = keys_rotated_at
         self._pub = extract_public_keys(keypair)
 
     # ─────────────────────────────────────────
-    # CREATION
+    # CREATION & KEY ROTATION
     # ─────────────────────────────────────────
 
     @classmethod
@@ -158,17 +178,44 @@ class Identity:
             keypair=generate_hybrid_keypair(),
         )
 
+    def rotate_keys(self) -> "Identity":
+        """
+        Generate a new hybrid keypair while preserving entity_id, name, and role.
+
+        Increments key_version and updates keys_rotated_at timestamp.
+        Returns self for fluent chaining.
+        """
+        self.keypair = generate_hybrid_keypair()
+        self._pub = extract_public_keys(self.keypair)
+        self.key_version += 1
+        self.keys_rotated_at = datetime.now(UTC).isoformat()
+        return self
+
     # ─────────────────────────────────────────
     # PUBLIC CARD
     # ─────────────────────────────────────────
 
-    def public_card(self) -> "PublicCard":
+    def public_card(
+        self,
+        valid_until: str | datetime | None = None,
+        ttl_seconds: float | int | None = None,
+    ) -> "PublicCard":
         """
         Return a PublicCard containing only public keys and metadata.
 
-        The returned card is safe to serialise and share with any peer that
-        needs to send envelopes to, or verify envelopes from, this identity.
+        Optionally specify valid_until (ISO timestamp string or datetime) or ttl_seconds
+        to issue a card with an expiration date.
         """
+        v_until_str: str | None = None
+        if valid_until is not None:
+            if isinstance(valid_until, datetime):
+                dt = valid_until if valid_until.tzinfo is not None else valid_until.replace(tzinfo=UTC)
+                v_until_str = dt.isoformat()
+            else:
+                v_until_str = str(valid_until)
+        elif ttl_seconds is not None:
+            from datetime import timedelta
+            v_until_str = (datetime.now(UTC) + timedelta(seconds=float(ttl_seconds))).isoformat()
 
         return PublicCard(
             entity_id=self.entity_id,
@@ -176,6 +223,8 @@ class Identity:
             role=self.role,
             public_keys=self._pub,
             created_at=self.created_at,
+            valid_until=v_until_str,
+            key_version=self.key_version,
         )
 
     # ─────────────────────────────────────────
@@ -186,11 +235,13 @@ class Identity:
         """
         Encrypt and sign plaintext for the given recipient.
 
+        Verifies that recipient_card is valid (neither expired nor revoked).
         Performs hybrid key exchange (X25519 + ML-KEM) to derive a shared key,
         encrypts plaintext with AES-256-GCM, signs the ciphertext + metadata
         with both Ed25519 and ML-DSA, and returns an Envelope containing all
         wire-level fields.
         """
+        recipient_card.verify_validity()
 
         raw = seal(
             plaintext=plaintext,
@@ -209,8 +260,11 @@ class Identity:
     ) -> bytes:
         """
         Decrypt and authenticate an envelope from sender_card.
+        Verifies that sender_card is valid (neither expired nor revoked).
         A ReplayGuard instance is strictly required to prevent replay attacks.
         """
+        sender_card.verify_validity()
+
         if replay_guard is None:
             raise RuntimeError(
                 "CRITICAL SECURITY ERROR: open_from() must be called with a "
@@ -267,6 +321,8 @@ class Identity:
             "name": self.name,
             "role": self.role,
             "created_at": self.created_at,
+            "key_version": self.key_version,
+            "keys_rotated_at": self.keys_rotated_at,
             "public_keys": {
                 "exchange_pub": self._pub["exchange_pub"].hex(),
                 "kem_pub": self._pub["kem_pub"].hex(),
@@ -369,6 +425,8 @@ class Identity:
             role=payload["role"],
             keypair=keypair,
             created_at=payload["created_at"],
+            key_version=payload.get("key_version", 1),
+            keys_rotated_at=payload.get("keys_rotated_at"),
         )
 
     @classmethod
@@ -430,7 +488,7 @@ class Identity:
     # ─────────────────────────────────────────
 
     def __repr__(self) -> str:
-        return f"Identity(id={self.entity_id[:8]}..., name={self.name!r}, role={self.role})"
+        return f"Identity(id={self.entity_id[:8]}..., name={self.name!r}, role={self.role}, key_version={self.key_version})"
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Identity):
@@ -449,8 +507,8 @@ class PublicCard:
 
     What this class does:
         Holds the four public keys (exchange_pub, kem_pub, signing_pub,
-        pqc_sig_pub) plus entity_id, name, role, and created_at.  No private
-        key material is present.
+        pqc_sig_pub) plus entity_id, name, role, created_at, expiration
+        metadata (valid_until), and revocation status (is_revoked).
 
         PublicCards are the primary unit exchanged between UXSP participants:
           - Share your PublicCard so others can seal messages to you.
@@ -462,25 +520,97 @@ class PublicCard:
         from_dict() / from_json() — reconstruct from JSON (hex strings → bytes).
     """
     _VERSION = "UXSP-PUBCARD-1"
+
     def __init__(
-        self, entity_id: str, name: str, role: str, public_keys: dict[str, bytes], created_at: str
+        self,
+        entity_id: str,
+        name: str,
+        role: str,
+        public_keys: dict[str, bytes],
+        created_at: str,
+        valid_until: str | None = None,
+        is_revoked: bool = False,
+        revocation_reason: str | None = None,
+        revoked_at: str | None = None,
+        key_version: int = 1,
     ):
         self.entity_id = entity_id
         self.name = name
         self.role = validate_role(role)
         self.public_keys = public_keys
         self.created_at: str = created_at
+        self.valid_until: str | None = valid_until
+        self.is_revoked: bool = is_revoked
+        self.revocation_reason: str | None = revocation_reason
+        self.revoked_at: str | None = revoked_at
+        self.key_version: int = key_version
+
+    def is_expired(self, now: datetime | str | None = None) -> bool:
+        """Check if this PublicCard is past its valid_until timestamp."""
+        if not self.valid_until:
+            return False
+
+        if now is None:
+            now_dt = datetime.now(UTC)
+        elif isinstance(now, str):
+            now_dt = datetime.fromisoformat(now)
+            if now_dt.tzinfo is None:
+                now_dt = now_dt.replace(tzinfo=UTC)
+        else:
+            now_dt = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
+
+        valid_until_dt = datetime.fromisoformat(self.valid_until)
+        if valid_until_dt.tzinfo is None:
+            valid_until_dt = valid_until_dt.replace(tzinfo=UTC)
+
+        return now_dt > valid_until_dt
+
+    def revoke(
+        self,
+        reason: str | None = "Key compromised",
+        revoked_at: str | datetime | None = None,
+    ) -> None:
+        """Mark this PublicCard as revoked."""
+        self.is_revoked = True
+        self.revocation_reason = reason or "Key compromised"
+        if revoked_at is None:
+            self.revoked_at = datetime.now(UTC).isoformat()
+        elif isinstance(revoked_at, datetime):
+            dt = revoked_at if revoked_at.tzinfo is not None else revoked_at.replace(tzinfo=UTC)
+            self.revoked_at = dt.isoformat()
+        else:
+            self.revoked_at = str(revoked_at)
+
+    def verify_validity(self, now: datetime | str | None = None) -> None:
+        """
+        Verify that this PublicCard is valid (neither revoked nor expired).
+        Raises CardRevokedError if revoked or CardExpiredError if expired.
+        """
+        if self.is_revoked:
+            reason_msg = f" (reason: {self.revocation_reason})" if self.revocation_reason else ""
+            raise CardRevokedError(f"PublicCard for entity '{self.entity_id}' has been revoked{reason_msg}.")
+        if self.is_expired(now=now):
+            raise CardExpiredError(f"PublicCard for entity '{self.entity_id}' expired at {self.valid_until}.")
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a plain dict (JSON-safe hex strings)."""
-        return {
+        d = {
             "version": self._VERSION,
             "entity_id": self.entity_id,
             "name": self.name,
             "role": self.role,
             "created_at": self.created_at,
             "public_keys": {k: v.hex() for k, v in self.public_keys.items()},
+            "key_version": self.key_version,
+            "is_revoked": self.is_revoked,
         }
+        if self.valid_until is not None:
+            d["valid_until"] = self.valid_until
+        if self.revocation_reason is not None:
+            d["revocation_reason"] = self.revocation_reason
+        if self.revoked_at is not None:
+            d["revoked_at"] = self.revoked_at
+        return d
 
     def to_json(self) -> str:
         """Serialise to JSON string."""
@@ -499,6 +629,11 @@ class PublicCard:
             role=data["role"],
             created_at=data["created_at"],
             public_keys={k: bytes.fromhex(v) for k, v in data["public_keys"].items()},
+            valid_until=data.get("valid_until"),
+            is_revoked=bool(data.get("is_revoked", False)),
+            revocation_reason=data.get("revocation_reason"),
+            revoked_at=data.get("revoked_at"),
+            key_version=int(data.get("key_version", 1)),
         )
 
     @classmethod
@@ -507,9 +642,14 @@ class PublicCard:
         return cls.from_dict(json.loads(json_str))
 
     def __repr__(self) -> str:
-        return f"PublicCard(id={self.entity_id[:8]}..., name={self.name!r}, role={self.role})"
+        status = " (REVOKED)" if self.is_revoked else ""
+        return f"PublicCard(id={self.entity_id[:8]}..., name={self.name!r}, role={self.role}, version={self.key_version}){status}"
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, PublicCard):
             return NotImplemented
-        return self.entity_id == other.entity_id
+        return (
+            self.entity_id == other.entity_id
+            and self.key_version == other.key_version
+            and self.is_revoked == other.is_revoked
+        )
