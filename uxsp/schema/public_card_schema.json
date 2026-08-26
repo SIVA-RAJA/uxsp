@@ -1,0 +1,70 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PublicCard",
+  "description": "Draft-07 JSON Schema specification for UXSP PublicCard identity card.",
+  "type": "object",
+  "required": [
+    "version",
+    "entity_id",
+    "name",
+    "role",
+    "created_at",
+    "public_keys"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "version": {
+      "type": "string",
+      "enum": ["UXSP-PUBCARD-1"],
+      "description": "PublicCard schema version string."
+    },
+    "entity_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique UUID/entity identifier."
+    },
+    "name": {
+      "type": "string",
+      "description": "Entity display name."
+    },
+    "role": {
+      "type": "string",
+      "description": "Entity assigned security role."
+    },
+    "created_at": {
+      "type": "string",
+      "description": "ISO 8601 creation timestamp."
+    },
+    "public_keys": {
+      "type": "object",
+      "required": ["exchange_pub", "kem_pub", "signing_pub", "pqc_sig_pub"],
+      "properties": {
+        "exchange_pub": { "type": "string" },
+        "kem_pub": { "type": "string" },
+        "signing_pub": { "type": "string" },
+        "pqc_sig_pub": { "type": "string" }
+      }
+    },
+    "key_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Hybrid key rotation counter."
+    },
+    "valid_until": {
+      "type": ["string", "null"],
+      "description": "ISO 8601 expiration timestamp."
+    },
+    "is_revoked": {
+      "type": "boolean",
+      "description": "Whether card is explicitly revoked."
+    },
+    "revocation_reason": {
+      "type": ["string", "null"],
+      "description": "Reason for revocation if revoked."
+    },
+    "revoked_at": {
+      "type": ["string", "null"],
+      "description": "ISO 8601 revocation timestamp if revoked."
+    }
+  }
+}

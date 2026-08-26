@@ -1038,6 +1038,19 @@ class TestKeyRotationAndExpiry:
         card.revoke(revoked_at=now_dt_naive)
         assert card.revoked_at == now_dt_naive.replace(tzinfo=UTC).isoformat()
 
+        # Test naive datetime valid_until in public_card() (lines 212-213)
+        identity = m.Identity.create("TestNaiveValidUntil", "USER")
+        naive_valid_until = datetime(2030, 1, 1)
+        card_naive = identity.public_card(valid_until=naive_valid_until)
+        assert card_naive.valid_until == naive_valid_until.replace(tzinfo=UTC).isoformat()
+
+        # Test keys_rotated_at in identity metadata (line 100)
+        rotated_ident = identity.rotate_keys()
+        export_dict = rotated_ident.export_encrypted("Password123!")
+        assert "keys_rotated_at" in export_dict
+        loaded = m.Identity.import_encrypted(export_dict, "Password123!")
+        assert loaded.keys_rotated_at is not None
+
         card.revoke(revoked_at="custom-time-string")
         assert card.revoked_at == "custom-time-string"
 

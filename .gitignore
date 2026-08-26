@@ -23,6 +23,7 @@ sdist/
 var/
 wheels/
 *.whl
+*.tar.gz
 share/python-wheels/
 *.egg-info/
 .installed.cfg
@@ -84,26 +85,40 @@ venv.bak/
 *.bak
 *~
 
-# mypy
+# mypy & linters
 .mypy_cache/
 .dmypy.json
 dmypy.json
-
-# ruff
 .ruff_cache/
 
 # OS specific
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 
-# IDEs
+# IDEs & Editor settings
 .vscode/
 .idea/
 *.swp
 *.swo
+*.sublime-project
+*.sublime-workspace
+
+# Node / JS SDK
+node_modules/
+sdks/js/dist/
+sdks/js/node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
 
 # UXSP Project Specific
 *.uxsp
 *.keys
 local_keys/
-node_modules/
+.gemini/
+.antigravity/

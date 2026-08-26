@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SecurePackage",
+  "description": "Draft-07 JSON Schema specification for UXSP SecurePackage wire payload.",
+  "type": "object",
+  "required": [
+    "uxsp_package_version",
+    "sender_id",
+    "receiver_id",
+    "data_type",
+    "is_chunked"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "uxsp_package_version": {
+      "type": "string",
+      "enum": ["1.0"],
+      "description": "UXSP package format version."
+    },
+    "sender_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Sender identity ID."
+    },
+    "receiver_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Receiver identity ID."
+    },
+    "data_type": {
+      "type": "string",
+      "description": "Payload data type (e.g. TEXT, JSON, BINARY, FILE, VIDEO, AUDIO, PHOTO, STREAM)."
+    },
+    "is_chunked": {
+      "type": "boolean",
+      "description": "Whether package is split into multiple streaming chunks."
+    },
+    "envelope": {
+      "type": ["object", "null"],
+      "description": "Single sealed envelope payload for non-chunked packages."
+    },
+    "chunks": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "description": "List of sealed envelope chunk objects for streaming/chunked packages."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Arbitrary key-value metadata associated with the package."
+    }
+  }
+}

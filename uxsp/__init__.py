@@ -271,12 +271,17 @@ from uxsp.secure import (
     verify_password,
 )
 
+from uxsp import schema
+from uxsp import secure
+from uxsp.aio import stream as async_stream
+
 # ─────────────────────────────────────────────
 # __all__ — what `from uxsp import *` exports
 # ─────────────────────────────────────────────
 __all__ = [
     # simplified workflow (secure)
     "secure",
+    "schema",
     "create_identity",
     "set_identity",
     "get_identity",

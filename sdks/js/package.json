@@ -1,0 +1,21 @@
+{
+  "name": "uxsp-js",
+  "version": "1.0.1",
+  "description": "UXSP (Ultra Secure Protocol) JavaScript/TypeScript Browser SDK",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test"
+  },
+  "keywords": [
+    "uxsp",
+    "post-quantum",
+    "encryption",
+    "browser-sdk",
+    "security"
+  ],
+  "author": "SIVA RAJA S",
+  "license": "MIT"
+}

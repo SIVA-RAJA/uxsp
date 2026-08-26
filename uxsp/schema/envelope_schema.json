@@ -1,0 +1,70 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "UXSPEnvelope",
+  "description": "Draft-07 JSON Schema specification for UXSP-1 Sealed Envelope wire format.",
+  "type": "object",
+  "required": [
+    "version",
+    "sender_id",
+    "recipient_id",
+    "timestamp",
+    "envelope_nonce",
+    "ciphertext",
+    "nonce",
+    "ephemeral_pub",
+    "kem_ciphertext",
+    "classical_sig",
+    "pqc_sig"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "version": {
+      "type": "string",
+      "enum": ["UXSP-1"],
+      "description": "UXSP protocol version identifier."
+    },
+    "sender_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Entity ID of sender."
+    },
+    "recipient_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Entity ID of recipient."
+    },
+    "timestamp": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Unix timestamp integer in seconds."
+    },
+    "envelope_nonce": {
+      "type": "string",
+      "description": "Unique nonce for envelope identification and replay guard."
+    },
+    "ciphertext": {
+      "type": "string",
+      "description": "AES-256-GCM encrypted payload ciphertext in hex."
+    },
+    "nonce": {
+      "type": "string",
+      "description": "AES-256-GCM IV nonce in hex."
+    },
+    "ephemeral_pub": {
+      "type": "string",
+      "description": "Ephemeral public key for X25519 DH exchange in hex."
+    },
+    "kem_ciphertext": {
+      "type": "string",
+      "description": "Post-Quantum ML-KEM shared secret encapsulation ciphertext in hex."
+    },
+    "classical_sig": {
+      "type": "string",
+      "description": "Ed25519 classical digital signature in hex."
+    },
+    "pqc_sig": {
+      "type": "string",
+      "description": "Post-Quantum ML-DSA digital signature in hex."
+    }
+  }
+}

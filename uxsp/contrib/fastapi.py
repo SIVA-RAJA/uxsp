@@ -164,6 +164,7 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
                     return {"type": "http.request", "body": decrypted_bytes, "more_body": False}
 
                 request._receive = receive_override  # type: ignore[assignment]
+                request.scope["receive"] = receive_override
             except Exception as e:
                 return JSONResponse(
                     status_code=400,

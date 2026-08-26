@@ -275,3 +275,26 @@ def test_fastapi_middleware_malformed_package_and_invalid_body(server_identity):
     response = test_client.post("/api/echo", json=fake_pkg)
     assert response.status_code == 400
     assert "Decryption Failed" in response.json()["error"]
+
+
+def test_fastapi_middleware_raw_receive_override(server_identity, client_identity):
+    app = FastAPI()
+    app.add_middleware(UXSPFastAPIMiddleware, identity=server_identity)
+    uxsp.secure.register_peer(client_identity.public_card())
+
+    @app.post("/api/raw_receive")
+    async def raw_receive_endpoint(request: Request):
+        msg = await request.scope["receive"]()
+        return {"raw_body": msg["body"].decode("utf-8")}
+
+    test_client = TestClient(app)
+
+    pkg = uxsp.secure.Send(
+        receiver=server_identity.public_card(),
+        item={"key": "value"},
+        sender=client_identity,
+    )
+
+    res = test_client.post("/api/raw_receive", content=pkg.to_json(), headers={"X-UXSP-Package": "1"})
+    assert res.status_code == 200
+
