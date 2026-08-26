@@ -2,4 +2,6 @@ include README.md
 include LICENSE
 include SECURITY.md
 include CHANGELOG.md
+include uxsp/py.typed
+recursive-include uxsp/schema *.json
 recursive-include tests *.py

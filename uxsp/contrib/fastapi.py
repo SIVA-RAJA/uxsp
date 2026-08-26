@@ -162,7 +162,7 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
                 async def receive_override() -> dict[str, Any]:
                     return {"type": "http.request", "body": decrypted_bytes, "more_body": False}
 
-                request._receive = receive_override  # type: ignore[assignment]
+                request._receive = receive_override  # noqa: B010
                 request.scope["receive"] = receive_override
             except Exception as e:
                 return JSONResponse(
@@ -183,9 +183,10 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
         if should_encrypt and request.state.uxsp_sender_card is not None:
             # Consume response body
             resp_body = getattr(response, "body", None)
-            if resp_body is None and hasattr(response, "body_iterator"):
+            body_iter = getattr(response, "body_iterator", None)
+            if resp_body is None and body_iter is not None:
                 chunks = []
-                async for chunk in response.body_iterator:  # type: ignore[union-attr]
+                async for chunk in body_iter:
                     chunks.append(chunk)
                 resp_body = b"".join(chunks)
 

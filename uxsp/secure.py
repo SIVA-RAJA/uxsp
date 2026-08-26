@@ -1773,12 +1773,13 @@ def SendStream(
                 f.write(pkg.to_json() + "\n")
         return out_p
     elif hasattr(output_destination, "write"):
+        dest: Any = output_destination
         for pkg in _package_generator():
             line = pkg.to_json() + "\n"
             try:
-                output_destination.write(line)
+                dest.write(line)
             except TypeError:
-                output_destination.write(line.encode("utf-8"))
+                dest.write(line.encode("utf-8"))
         return output_destination
     else:
         raise SecureSendError("output_destination must be a file path or writable file descriptor.")
@@ -1801,7 +1802,7 @@ def ReceiveStream(
 
     Returns Path to output_file (if path was given) or total bytes written (if file descriptor was given).
     """
-    out_fp = None
+    out_fp: Any = None
     close_out = False
     out_path = None
 
@@ -1818,20 +1819,21 @@ def ReceiveStream(
     total_bytes_written = 0
 
     try:
-        def _iter_packages():
+        def _iter_packages() -> Generator[SecurePackage, None, None]:
             if isinstance(packages_or_stream, (str, Path)):
                 p = Path(packages_or_stream)
                 with open(p, encoding="utf-8") as f:
-                    for line in f:
-                        line_str = line.strip()
+                    for line_item in f:
+                        line_str = line_item.strip()
                         if line_str:
                             yield SecurePackage.from_json(line_str)
             elif hasattr(packages_or_stream, "read"):
-                for line in packages_or_stream:
-                    if isinstance(line, bytes):
-                        line_str = line.decode("utf-8").strip()
+                stream_obj: Any = packages_or_stream
+                for raw_line in stream_obj:
+                    if isinstance(raw_line, bytes):
+                        line_str = raw_line.decode("utf-8").strip()
                     else:
-                        line_str = line.strip()
+                        line_str = str(raw_line).strip()
                     if line_str:
                         yield SecurePackage.from_json(line_str)
             elif isinstance(packages_or_stream, Iterable):
@@ -1855,7 +1857,8 @@ def ReceiveStream(
                 receiver=receiver,
                 receiver_identity=receiver_identity,
             )
-            out_fp.write(decrypted_chunk)
+            if out_fp is not None:
+                out_fp.write(decrypted_chunk)
             total_bytes_written += len(decrypted_chunk)
 
     finally:

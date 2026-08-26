@@ -98,7 +98,7 @@ class UXSPFlaskMiddleware:
         except Exception:
             return None
 
-    def _before_request(self) -> Response | None:
+    def _before_request(self) -> Response | tuple[Response, int] | None:
         path = request.path
         if any(path.startswith(exc) for exc in self.exclude_paths):
             return None

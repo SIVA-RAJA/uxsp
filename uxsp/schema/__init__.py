@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 _SCHEMA_DIR = Path(__file__).parent
 
@@ -25,19 +25,19 @@ class SchemaValidationError(ValueError):
 def get_envelope_schema() -> dict[str, Any]:
     """Return the JSON Schema dictionary for UXSP-1 Envelopes."""
     path = _SCHEMA_DIR / "envelope_schema.json"
-    return json.loads(path.read_text(encoding="utf-8"))
+    return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
 
 
 def get_package_schema() -> dict[str, Any]:
     """Return the JSON Schema dictionary for SecurePackages."""
     path = _SCHEMA_DIR / "package_schema.json"
-    return json.loads(path.read_text(encoding="utf-8"))
+    return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
 
 
 def get_public_card_schema() -> dict[str, Any]:
     """Return the JSON Schema dictionary for PublicCards."""
     path = _SCHEMA_DIR / "public_card_schema.json"
-    return json.loads(path.read_text(encoding="utf-8"))
+    return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
 
 
 def validate_envelope(data: dict[str, Any]) -> None:

@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterable, AsyncIterator, Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from uxsp.core.chunking import create_chunked_transfer, reassemble_chunked_transfer
 from uxsp.core.identity import Identity, PublicCard
@@ -140,14 +140,14 @@ async def _async_iter_chunks_from_source(
             yield chunk
 
     elif isinstance(source, AsyncIterable):
-        async for chunk in source:
-            if chunk:
-                yield bytes(chunk)
+        async for chunk_item in source:
+            if chunk_item:
+                yield bytes(cast(Any, chunk_item))
 
     elif isinstance(source, Iterable):
-        for chunk in source:
-            if chunk:
-                yield bytes(chunk)
+        for chunk_item in source:
+            if chunk_item:
+                yield bytes(cast(Any, chunk_item))
 
     else:
         raise TypeError("Source must be a file path, file descriptor, or byte generator.")
@@ -287,7 +287,7 @@ async def ReceiveStream(
     total_bytes_written = 0
 
     try:
-        async def _async_iter_packages():
+        async def _async_iter_packages() -> AsyncIterator[SecurePackage]:
             if isinstance(packages_or_stream, (str, Path)):
                 p = Path(packages_or_stream)
                 f = await asyncio.to_thread(open, p, "r", encoding="utf-8")
@@ -303,8 +303,9 @@ async def ReceiveStream(
                     await asyncio.to_thread(f.close)
 
             elif hasattr(packages_or_stream, "read"):
+                stream_obj: Any = packages_or_stream
                 while True:
-                    line = await asyncio.to_thread(packages_or_stream.readline)
+                    line = await asyncio.to_thread(stream_obj.readline)
                     if not line:
                         break
                     if isinstance(line, bytes):
