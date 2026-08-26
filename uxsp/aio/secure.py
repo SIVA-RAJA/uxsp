@@ -16,6 +16,7 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
+from uxsp.aio.stream import ReceiveStream, SendStream
 from uxsp.core.identity import Identity, PublicCard
 from uxsp.secure import SecurePackage, register_peer, set_identity
 

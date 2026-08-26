@@ -251,6 +251,8 @@ from uxsp.secure import (
     SendVideo,
     SendVoice,
     SendZip,
+    SendStream,
+    ReceiveStream,
     TypeMismatchError,
     create_identity,
     export_identity_encrypted,
@@ -313,6 +315,8 @@ __all__ = [
     "ReceiveContact",
     "Send",
     "Receive",
+    "SendStream",
+    "ReceiveStream",
     # identity
     "Identity",
     "PublicCard",

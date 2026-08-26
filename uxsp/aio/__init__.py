@@ -44,6 +44,8 @@ from uxsp.aio.secure import (
     SendZip,
 )
 from uxsp.aio.stream import (
+    ReceiveStream,
+    SendStream,
     stream_receive_chunks,
     stream_send_chunks,
 )
@@ -86,6 +88,8 @@ __all__ = [
     "ReceiveContact",
     "Send",
     "Receive",
+    "SendStream",
+    "ReceiveStream",
     # Async Streaming
     "stream_send_chunks",
     "stream_receive_chunks",
