@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name            = "uxsp"
-version         = "1.0.1"
+version         = "1.1.0"
 description     = "Universal Exchange Security Protocol — Hybrid Post-Quantum Secure Messaging"
 readme          = "README.md"
 requires-python = ">=3.11"
@@ -70,6 +70,15 @@ frameworks = [
     "starlette >= 0.27.0",
     "django >= 4.0.0",
     "flask >= 2.0.0",
+]
+all = [
+    "fastapi >= 0.100.0",
+    "starlette >= 0.27.0",
+    "httpx >= 0.24.0",
+    "django >= 4.0.0",
+    "flask >= 2.0.0",
+    "redis >= 4.0.0",
+    "psycopg2-binary >= 2.9.0",
 ]
 
 # Development tools — locked to exact versions for reproducible CI.
