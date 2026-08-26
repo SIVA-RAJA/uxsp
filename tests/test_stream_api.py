@@ -3,10 +3,10 @@ Unit tests for Synchronous File Streaming API (SendStream / ReceiveStream) in ux
 """
 import io
 import os
-from pathlib import Path
+
 import pytest
 
-from uxsp import Identity, PublicCard, ReceiveStream, SendStream
+from uxsp import Identity, ReceiveStream, SendStream
 from uxsp.secure import SecureSendError
 
 

@@ -6,8 +6,6 @@ ASGI frameworks (FastAPI, Starlette, Quart) and WebSocket connections.
 """
 
 from uxsp.aio.secure import (
-    CardExpiredError,
-    CardRevokedError,
     Receive,
     ReceiveArchive,
     ReceiveAudio,
@@ -59,6 +57,7 @@ from uxsp.aio.stream import (
     stream_receive_chunks,
     stream_send_chunks,
 )
+from uxsp.core.identity import CardExpiredError, CardRevokedError
 
 __all__ = [
     # Async Dispatchers

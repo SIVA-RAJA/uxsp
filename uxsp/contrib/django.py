@@ -29,7 +29,8 @@ from __future__ import annotations
 
 import functools
 import json
-from typing import Any, Callable, Sequence
+from collections.abc import Callable, Sequence
+from typing import Any
 
 from uxsp.core.identity import Identity, PublicCard
 from uxsp.secure import (
@@ -89,10 +90,10 @@ class UXSPDjangoMiddleware:
             return self.get_response(request)
 
         # Initialize UXSP request attributes
-        setattr(request, "uxsp_encrypted", False)
-        setattr(request, "uxsp_payload", None)
-        setattr(request, "uxsp_sender_id", None)
-        setattr(request, "uxsp_sender_card", None)
+        request.uxsp_encrypted = False
+        request.uxsp_payload = None
+        request.uxsp_sender_id = None
+        request.uxsp_sender_card = None
 
         header_pkg = request.META.get("HTTP_X_UXSP_PACKAGE")
         header_sender = request.META.get("HTTP_X_UXSP_SENDER")
@@ -196,7 +197,7 @@ def protect_view(
     def decorator(view_func: Callable[..., HttpResponse]) -> Callable[..., HttpResponse]:
         @functools.wraps(view_func)
         def wrapper(request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
-            setattr(request, "uxsp_force_encrypt", True)
+            request.uxsp_force_encrypt = True
             return view_func(request, *args, **kwargs)
 
         return wrapper

@@ -5,10 +5,14 @@ Tests for uxsp.contrib.django (UXSPDjangoMiddleware & @protect_view decorator).
 from __future__ import annotations
 
 import json
+
+import pytest
+
+django = pytest.importorskip("django")
+
 from django.conf import settings
 from django.http import HttpResponse, JsonResponse
 from django.test import RequestFactory
-import pytest
 
 import uxsp
 from uxsp.contrib.django import UXSPDjangoMiddleware, protect, protect_view
@@ -22,7 +26,7 @@ if not settings.configured:
         ROOT_URLCONF=__name__,
         MIDDLEWARE=[],
     )
-import django
+
 django.setup()
 
 

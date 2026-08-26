@@ -954,7 +954,7 @@ class TestKeyRotationAndExpiry:
     def test_public_card_expiration(self):
         m = _import()
         ident = m.Identity.create("Frank", "TESTER")
-        
+
         # Valid card with TTL
         card_ttl = ident.public_card(ttl_seconds=3600)
         assert card_ttl.valid_until is not None
@@ -964,7 +964,7 @@ class TestKeyRotationAndExpiry:
         past_str = "2020-01-01T00:00:00+00:00"
         card_expired = ident.public_card(valid_until=past_str)
         assert card_expired.is_expired()
-        
+
         with pytest.raises(m.CardExpiredError, match="expired at"):
             card_expired.verify_validity()
 
@@ -1019,7 +1019,7 @@ class TestKeyRotationAndExpiry:
     def test_expiration_and_revocation_edge_cases(self):
         m = _import()
         card = m.PublicCard("eid-1", "A", "USER", _fake_pub_keys(), "2024-01-01", valid_until="2025-01-01T00:00:00")
-        
+
         # Test now as ISO string
         assert card.is_expired(now="2026-01-01T00:00:00")
         assert not card.is_expired(now="2024-06-01T00:00:00")

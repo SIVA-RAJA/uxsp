@@ -5,10 +5,14 @@ Tests for uxsp.contrib.fastapi (UXSPFastAPIMiddleware & @protect decorator).
 from __future__ import annotations
 
 import json
+
+import pytest
+
+fastapi = pytest.importorskip("fastapi")
+
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse, Response
 from fastapi.testclient import TestClient
-import pytest
 
 import uxsp
 from uxsp.contrib.fastapi import UXSPFastAPIMiddleware, protect, protect_route
@@ -230,7 +234,7 @@ def test_fastapi_bytes_payload_and_require_enc(server_identity, client_identity)
 
     @app.post("/api/bytes")
     async def bytes_endpoint(request: Request):
-        return Response(content=f"Received: {request.state.uxsp_payload}".encode("utf-8"), media_type="text/plain")
+        return Response(content=f"Received: {request.state.uxsp_payload}".encode(), media_type="text/plain")
 
     test_client = TestClient(app)
 

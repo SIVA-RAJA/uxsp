@@ -4,8 +4,6 @@ Unit tests for uxsp.wasm and uxsp.pyodide modules.
 
 import json
 
-import pytest
-
 import uxsp
 from uxsp.pyodide import export_pyodide_globals, js_open_text, js_seal_text, js_validate_package
 from uxsp.wasm import PyodideUXSPBridge, is_wasm_environment

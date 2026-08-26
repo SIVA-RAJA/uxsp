@@ -272,7 +272,6 @@ from uxsp.secure import (
 )
 
 from uxsp import schema
-from uxsp import secure
 from uxsp.aio import stream as async_stream
 
 # ─────────────────────────────────────────────
@@ -450,9 +449,13 @@ __all__ = [
     "seal",
     "open_seal",
     "derive_key",
+    "argon2id_hash",
+    "argon2id_needs_rehash",
+    "argon2id_verify",
     # meta
     "__version__",
     "aio",
+    "async_stream",
 ]
 
 from uxsp import aio

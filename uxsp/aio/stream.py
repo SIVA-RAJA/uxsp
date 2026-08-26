@@ -132,7 +132,7 @@ async def _async_iter_chunks_from_source(
         finally:
             await asyncio.to_thread(f.close)
 
-    elif hasattr(source, "read") and callable(getattr(source, "read")):
+    elif hasattr(source, "read") and callable(source.read):
         while True:
             chunk = await asyncio.to_thread(source.read, chunk_size)
             if not chunk:
@@ -238,12 +238,12 @@ async def SendStream(
 
     elif hasattr(output_destination, "write"):
         async for pkg in _async_package_generator():
-            line = pkg.to_json() + "\n"
-            def _do_write():
+            line_data = pkg.to_json() + "\n"
+            def _do_write(data: str = line_data) -> None:
                 try:
-                    output_destination.write(line)
+                    output_destination.write(data)
                 except TypeError:
-                    output_destination.write(line.encode("utf-8"))
+                    output_destination.write(data.encode("utf-8"))
             await asyncio.to_thread(_do_write)
         return output_destination
     else:

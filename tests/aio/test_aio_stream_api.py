@@ -3,10 +3,9 @@ Unit tests for Asynchronous File Streaming API (uxsp.aio.SendStream / uxsp.aio.R
 """
 import io
 import os
-from pathlib import Path
+
 import pytest
 
-import uxsp
 from uxsp import Identity
 from uxsp.aio import ReceiveStream, SendStream
 

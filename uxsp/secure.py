@@ -37,7 +37,7 @@ from uxsp.core.chunking import (
     reassemble_chunked_transfer,
 )
 from uxsp.core.envelope import Envelope
-from uxsp.core.identity import CardExpiredError, CardRevokedError, Identity, PublicCard
+from uxsp.core.identity import Identity, PublicCard
 from uxsp.core.nonce import MemoryNonceStore, NonceStore
 from uxsp.core.payload import (
     UXSPPayload,
@@ -1684,7 +1684,7 @@ def _iter_chunks_from_source(
                 if not chunk:
                     break
                 yield chunk
-    elif hasattr(source, "read") and callable(getattr(source, "read")):
+    elif hasattr(source, "read") and callable(source.read):
         while True:
             chunk = source.read(chunk_size)
             if not chunk:
@@ -1726,9 +1726,8 @@ def SendStream(
     chunk_gen = _iter_chunks_from_source(stream_or_path, chunk_size=chunk_size)
 
     def _package_generator() -> Generator[SecurePackage, None, None]:
-        chunk_idx = 0
         has_yielded = False
-        for chunk_bytes in chunk_gen:
+        for chunk_idx, chunk_bytes in enumerate(chunk_gen):
             has_yielded = True
             chunk_meta = {
                 "stream_chunk_index": chunk_idx,
@@ -1744,7 +1743,6 @@ def SendStream(
                 filename=fname,
                 metadata=chunk_meta,
             )
-            chunk_idx += 1
             yield pkg
 
         if not has_yielded:
@@ -1810,7 +1808,7 @@ def ReceiveStream(
     if isinstance(output_file, (str, Path)):
         out_path = Path(output_file)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_fp = open(out_path, "wb")
+        out_fp = open(out_path, "wb")  # noqa: SIM115
         close_out = True
     elif hasattr(output_file, "write"):
         out_fp = output_file
@@ -1823,7 +1821,7 @@ def ReceiveStream(
         def _iter_packages():
             if isinstance(packages_or_stream, (str, Path)):
                 p = Path(packages_or_stream)
-                with open(p, "r", encoding="utf-8") as f:
+                with open(p, encoding="utf-8") as f:
                     for line in f:
                         line_str = line.strip()
                         if line_str:

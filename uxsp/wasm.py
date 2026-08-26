@@ -11,9 +11,9 @@ import json
 import sys
 from typing import Any
 
-from uxsp.core.identity import Identity, PublicCard
 import uxsp.schema as schema
 import uxsp.secure as secure
+from uxsp.core.identity import Identity, PublicCard
 
 
 def is_wasm_environment() -> bool:

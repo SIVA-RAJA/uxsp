@@ -155,12 +155,13 @@ reportUnknownParameterType = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts   = "-v --tb=short --cov=uxsp --cov-report=term-missing"
+markers   = ["asyncio: mark test as async"]
 
 # Suppress the liboqs version mismatch warning (liboqs C library vs
 # liboqs-python wrapper may differ by patch version — this is harmless).
 filterwarnings = [
     "ignore::UserWarning:oqs",
-    "ignore::starlette.exceptions.StarletteDeprecationWarning",
+    "ignore:.*StarletteDeprecationWarning.*",
 ]
 
 # ── Coverage ──────────────────────────────────────────────────────────────────

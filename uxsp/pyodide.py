@@ -6,11 +6,9 @@ Exposes JavaScript global binding functions for browser runtimes using Pyodide.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from uxsp.wasm import PyodideUXSPBridge
-
 
 _BRIDGE_INSTANCE: PyodideUXSPBridge | None = None
 

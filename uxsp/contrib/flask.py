@@ -28,7 +28,8 @@ from __future__ import annotations
 
 import functools
 import json
-from typing import Any, Callable, Sequence
+from collections.abc import Callable, Sequence
+from typing import Any
 
 from uxsp.core.identity import Identity, PublicCard
 from uxsp.secure import (

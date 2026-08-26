@@ -16,17 +16,32 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from uxsp.aio.stream import ReceiveStream, SendStream
-from uxsp.core.identity import CardExpiredError, CardRevokedError, Identity, PublicCard
+from uxsp.core.identity import Identity, PublicCard
 from uxsp.secure import (
     SecurePackage,
+)
+from uxsp.secure import (
     get_identity as _sync_get_identity,
+)
+from uxsp.secure import (
     get_peer as _sync_get_peer,
+)
+from uxsp.secure import (
     register_peer as _sync_register_peer,
+)
+from uxsp.secure import (
     reset_context as _sync_reset_context,
+)
+from uxsp.secure import (
     revoke_peer as _sync_revoke_peer,
+)
+from uxsp.secure import (
     rotate_keys as _sync_rotate_keys,
+)
+from uxsp.secure import (
     set_identity as _sync_set_identity,
+)
+from uxsp.secure import (
     verify_peer_validity as _sync_verify_peer_validity,
 )
 

@@ -5,8 +5,12 @@ Tests for uxsp.contrib.flask (UXSPFlaskMiddleware & @protect_route decorator).
 from __future__ import annotations
 
 import json
-from flask import Flask, g, jsonify
+
 import pytest
+
+flask = pytest.importorskip("flask")
+
+from flask import Flask, g, jsonify
 
 import uxsp
 from uxsp.contrib.flask import UXSPFlaskMiddleware, protect, protect_route
