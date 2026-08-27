@@ -2011,3 +2011,60 @@ def ReceiveStream(
         return out_path
     return total_bytes_written
 
+
+def SendLiveSession(
+    receiver_id: str | int | PublicCard | Identity | None = None,
+    *,
+    receiver: str | int | PublicCard | Identity | None = None,
+    sender: Identity | None = None,
+    sender_identity: Identity | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> tuple[SecurePackage, __import__("uxsp.core.live", fromlist=["LiveSession"]).LiveSession]:
+    """
+    Negotiate a high-performance AES-GCM LiveSession for WebRTC video or socket streams.
+    Returns a tuple: (The encrypted SecurePackage to send, The local LiveSession).
+    """
+    from uxsp.core.live import LiveSession
+
+    session = LiveSession.generate()
+    meta = metadata or {}
+    meta["uxsp_live_exchange"] = True
+
+    pkg = _secure_send_payload(
+        receiver_id=receiver_id,
+        receiver=receiver,
+        sender=sender,
+        sender_identity=sender_identity,
+        payload_bytes=session.key,
+        data_type="live_session",
+        metadata=meta,
+    )
+
+    return pkg, session
+
+
+def ReceiveLiveSession(
+    sender_id: str | int | PublicCard | Identity | None = None,
+    package: str | dict[str, Any] | SecurePackage | None = None,
+    *,
+    sender: str | int | PublicCard | Identity | None = None,
+    sender_card: PublicCard | Identity | None = None,
+    receiver: Identity | None = None,
+    receiver_identity: Identity | None = None,
+) -> __import__("uxsp.core.live", fromlist=["LiveSession"]).LiveSession:
+    """
+    Accept a high-performance AES-GCM LiveSession from a peer.
+    Returns the decrypted, ready-to-use LiveSession.
+    """
+    from uxsp.core.live import LiveSession
+
+    key_bytes = _secure_receive_payload(
+        sender_id=sender_id,
+        package_input=package,
+        sender=sender,
+        sender_card=sender_card,
+        receiver=receiver,
+        receiver_identity=receiver_identity,
+        expected_type="live_session",
+    )
+    return LiveSession(key=key_bytes)

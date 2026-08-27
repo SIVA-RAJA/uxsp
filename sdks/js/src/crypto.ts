@@ -118,7 +118,8 @@ export async function hkdf(
 export async function aesGcmEncrypt(
   key: Uint8Array,
   nonce: Uint8Array,
-  plaintext: Uint8Array
+  plaintext: Uint8Array,
+  associatedData?: Uint8Array
 ): Promise<Uint8Array> {
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
@@ -128,12 +129,18 @@ export async function aesGcmEncrypt(
     ["encrypt"]
   );
 
+  const algo: any = {
+    name: "AES-GCM",
+    iv: nonce as any,
+    tagLength: 128
+  };
+  
+  if (associatedData) {
+    algo.additionalData = associatedData as any;
+  }
+
   const ciphertext = await crypto.subtle.encrypt(
-    {
-      name: "AES-GCM",
-      iv: nonce as any,
-      tagLength: 128
-    },
+    algo,
     cryptoKey,
     plaintext as any
   );
@@ -147,7 +154,8 @@ export async function aesGcmEncrypt(
 export async function aesGcmDecrypt(
   key: Uint8Array,
   nonce: Uint8Array,
-  ciphertext: Uint8Array
+  ciphertext: Uint8Array,
+  associatedData?: Uint8Array
 ): Promise<Uint8Array> {
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
@@ -157,12 +165,18 @@ export async function aesGcmDecrypt(
     ["decrypt"]
   );
 
+  const algo: any = {
+    name: "AES-GCM",
+    iv: nonce as any,
+    tagLength: 128
+  };
+  
+  if (associatedData) {
+    algo.additionalData = associatedData as any;
+  }
+
   const plaintext = await crypto.subtle.decrypt(
-    {
-      name: "AES-GCM",
-      iv: nonce as any,
-      tagLength: 128
-    },
+    algo,
     cryptoKey,
     ciphertext as any
   );
