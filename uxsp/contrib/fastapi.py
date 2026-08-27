@@ -161,8 +161,23 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
                 else:
                     decrypted_bytes = str(parsed_payload).encode("utf-8")
 
+                original_receive = request.scope.get("receive") or getattr(request, "_receive", None)
+                _receive_state = {"consumed": False}
+                request.state.is_done = False
+
                 async def receive_override() -> dict[str, Any]:
-                    return {"type": "http.request", "body": decrypted_bytes, "more_body": False}
+                    if getattr(request.state, "is_done", False):
+                        if original_receive:
+                            # Safely fetch the next message (likely disconnect) if endpoint is done
+                            return await original_receive()
+                        return {"type": "http.disconnect"}
+                        
+                    if not _receive_state["consumed"]:
+                        _receive_state["consumed"] = True
+                        return {"type": "http.request", "body": decrypted_bytes, "more_body": False}
+                    if original_receive:
+                        return await original_receive()
+                    return {"type": "http.disconnect"}
 
                 request._receive = receive_override  # noqa: B010
                 request.scope["receive"] = receive_override
@@ -179,6 +194,7 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
 
         # Call endpoint handler
         response = await call_next(request)
+        request.state.is_done = True
 
         # Encrypt outgoing response if request was encrypted or require_encryption is set
         should_encrypt = request.state.uxsp_encrypted or getattr(request.state, "uxsp_force_encrypt", False)

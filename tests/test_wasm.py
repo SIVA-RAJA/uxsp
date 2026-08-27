@@ -30,6 +30,25 @@ def test_pyodide_bridge_seal_and_open():
     decrypted = bridge_bob.open_text(package_json, sender_card_json=alice_card_json)
     assert decrypted == "Hello Pyodide WASM"
 
+def test_pyodide_bridge_binary_and_json_methods():
+    bridge_alice = PyodideUXSPBridge(name="Alice", role="CLIENT")
+    bridge_bob = PyodideUXSPBridge(name="Bob", role="SERVER")
+
+    alice_card_json = bridge_alice.get_public_card_json()
+    bob_card_json = bridge_bob.get_public_card_json()
+
+    # Binary test
+    binary_data = b"\x00\x01\x02\xFF\xAA"
+    pkg_bin_json = bridge_alice.seal_binary(binary_data, recipient_card_json=bob_card_json)
+    dec_bin = bridge_bob.open_binary(pkg_bin_json, sender_card_json=alice_card_json)
+    assert dec_bin == binary_data
+
+    # JSON Object test
+    json_obj = '{"nested": [1, 2, 3], "flag": true}'
+    pkg_json_obj = bridge_alice.seal_json(json_obj, recipient_card_json=bob_card_json)
+    dec_json = bridge_bob.open_json(pkg_json_obj, sender_card_json=alice_card_json)
+    assert dec_json == json_obj
+
 
 def test_pyodide_bridge_invalid_package_validation():
     # Covers lines 90-91 in uxsp/wasm.py

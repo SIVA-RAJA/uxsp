@@ -268,3 +268,86 @@ def test_django_middleware_malformed_package(server_identity):
     response = middleware(request)
     assert response.status_code == 400
     assert "Decryption Failed" in json.loads(response.content.decode("utf-8"))["error"]
+
+
+def test_django_streaming_response(server_identity, client_identity):
+    from django.http import StreamingHttpResponse
+    uxsp.secure.register_peer(client_identity.public_card())
+
+    def view_func(request):
+        def generate():
+            yield b"chunk1"
+            yield b"chunk2"
+        return StreamingHttpResponse(generate(), content_type="application/octet-stream")
+
+    middleware = UXSPDjangoMiddleware(view_func)
+    middleware.identity = server_identity
+
+    factory = RequestFactory()
+    pkg = uxsp.secure.Send(
+        receiver=server_identity.public_card(),
+        item={"hello": "stream"},
+        sender=client_identity,
+    )
+
+    request = factory.post(
+        "/api/stream",
+        data=pkg.to_json(),
+        content_type="application/json",
+        HTTP_X_UXSP_PACKAGE="1",
+        HTTP_X_UXSP_SENDER=client_identity.entity_id,
+    )
+
+    response = middleware(request)
+    assert response.status_code == 200
+    
+    # Process stream
+    lines = list(response.streaming_content)
+    valid_chunks = [L for L in lines if L.strip()]
+    assert len(valid_chunks) == 2
+    
+    import json
+    chunk_pkg = uxsp.secure.SecurePackage.from_dict(json.loads(valid_chunks[0].decode("utf-8")))
+    dec = uxsp.secure.Receive(sender=server_identity.public_card(), package=chunk_pkg, receiver=client_identity)
+    assert dec == b"chunk1"
+
+
+def test_django_max_response_size(server_identity, client_identity):
+    uxsp.secure.register_peer(client_identity.public_card())
+
+    def view_func(request):
+        return HttpResponse(b"too_big_response")
+
+    middleware = UXSPDjangoMiddleware(view_func)
+    middleware.identity = server_identity
+    middleware.max_response_size = 5
+
+    factory = RequestFactory()
+    pkg = uxsp.secure.Send(
+        receiver=server_identity.public_card(),
+        item="hi",
+        sender=client_identity,
+    )
+
+    request = factory.post(
+        "/api/big",
+        data=pkg.to_json(),
+        content_type="application/json",
+        HTTP_X_UXSP_PACKAGE="1",
+        HTTP_X_UXSP_SENDER=client_identity.entity_id,
+    )
+
+    with pytest.raises(ValueError, match="exceeds max_response_size"):
+        middleware(request)
+
+
+def test_django_protect_missing_middleware(server_identity):
+    @protect_view(server_identity=server_identity)
+    def broken_view(request):
+        return JsonResponse({"ok": True})
+
+    factory = RequestFactory()
+    request = factory.post("/api/broken", data={"hello": "world"}, content_type="application/json")
+
+    with pytest.raises(RuntimeError, match="@protect_view decorator requires UXSPDjangoMiddleware"):
+        broken_view(request)

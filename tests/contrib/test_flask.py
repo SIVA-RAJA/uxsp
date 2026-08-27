@@ -237,3 +237,86 @@ def test_flask_middleware_malformed_package(server_identity):
     response = test_client.post("/api/echo", json=fake_pkg)
     assert response.status_code == 400
     assert "Decryption Failed" in response.get_json()["error"]
+
+
+def test_flask_streaming_response(server_identity, client_identity):
+    from flask import Response
+    app = Flask("test_flask_streaming")
+    UXSPFlaskMiddleware(app, identity=server_identity)
+    uxsp.secure.register_peer(client_identity.public_card())
+
+    @app.route("/api/stream", methods=["POST"])
+    @protect(server_identity=server_identity)
+    def stream_endpoint():
+        def generate():
+            yield b"chunk1"
+            yield b"chunk2"
+        return Response(generate(), mimetype="application/octet-stream")
+
+    test_client = app.test_client()
+    pkg = uxsp.secure.Send(
+        receiver=server_identity.public_card(),
+        item={"hello": "stream"},
+        sender=client_identity,
+    )
+
+    response = test_client.post(
+        "/api/stream",
+        data=pkg.to_json(),
+        content_type="application/json",
+        headers={"X-UXSP-Package": "1"}
+    )
+    assert response.status_code == 200
+    
+    # Process stream
+    lines = response.get_data().split(b"\n")
+    valid_chunks = [L for L in lines if L.strip()]
+    assert len(valid_chunks) == 2
+    
+    import json
+    chunk_pkg = uxsp.secure.SecurePackage.from_dict(json.loads(valid_chunks[0].decode("utf-8")))
+    dec = uxsp.secure.Receive(sender=server_identity.public_card(), package=chunk_pkg, receiver=client_identity)
+    assert dec == b"chunk1"
+
+
+def test_flask_max_response_size(server_identity, client_identity):
+    from flask import Response
+    app = Flask("test_flask_max_size")
+    app.testing = True
+    UXSPFlaskMiddleware(app, identity=server_identity, max_response_size=5)
+    uxsp.secure.register_peer(client_identity.public_card())
+
+    @app.route("/api/big", methods=["POST"])
+    @protect(server_identity=server_identity)
+    def big_endpoint():
+        return Response(b"too_big_response")
+
+    test_client = app.test_client()
+    pkg = uxsp.secure.Send(
+        receiver=server_identity.public_card(),
+        item="hi",
+        sender=client_identity,
+    )
+
+    with pytest.raises(ValueError, match="exceeds max_response_size"):
+        test_client.post(
+            "/api/big",
+            data=pkg.to_json(),
+            content_type="application/json",
+            headers={"X-UXSP-Package": "1"}
+        )
+
+
+def test_flask_protect_missing_middleware(server_identity):
+    app = Flask("test_flask_missing_mw")
+    app.testing = True
+
+    @app.route("/api/broken", methods=["POST"])
+    @protect(server_identity=server_identity)
+    def broken_endpoint():
+        return jsonify({"ok": True})
+
+    test_client = app.test_client()
+
+    with pytest.raises(RuntimeError, match="@protect_route decorator requires UXSPFlaskMiddleware"):
+        test_client.post("/api/broken", json={"hello": "world"})

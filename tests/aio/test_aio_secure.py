@@ -270,3 +270,26 @@ async def test_async_universal_send_receive(alice_identity, bob_identity):
         receiver=bob_identity,
     )
     assert rec_json == {"key": "value"}
+
+
+@pytest.mark.asyncio
+async def test_async_live_session(alice_identity, bob_identity):
+    # Test SendLiveSession
+    pkg, sender_session = await uxsp.aio.SendLiveSession(
+        receiver=bob_identity.public_card(),
+        sender=alice_identity,
+        metadata={"video": "h264"}
+    )
+    assert sender_session is not None
+    assert pkg.metadata["video"] == "h264"
+
+    # Test ReceiveLiveSession
+    receiver_session = await uxsp.aio.ReceiveLiveSession(
+        sender=alice_identity.public_card(),
+        package=pkg,
+        receiver=bob_identity
+    )
+    assert receiver_session is not None
+    
+    # Verify the sessions matched keys
+    assert sender_session.key == receiver_session.key

@@ -224,6 +224,7 @@ def test_fastapi_protect_decorator_direct_invocation():
 
     scope = {"type": "http", "method": "POST", "path": "/"}
     req = Request(scope)
+    req.state.uxsp_encrypted = True  # Mock the middleware having run
     assert asyncio.run(dummy_fn_req(req)) is True
 
 
@@ -301,4 +302,106 @@ def test_fastapi_middleware_raw_receive_override(server_identity, client_identit
 
     res = test_client.post("/api/raw_receive", content=pkg.to_json(), headers={"X-UXSP-Package": "1"})
     assert res.status_code == 200
+
+
+def test_fastapi_protect_missing_middleware(server_identity):
+    app = FastAPI()
+
+    @app.post("/api/broken")
+    @protect(server_identity=server_identity)
+    async def broken_endpoint(request: Request):
+        return {"ok": True}
+
+    # We purposely do NOT add UXSPFastAPIMiddleware to `app`
+    test_client = TestClient(app)
+
+    with pytest.raises(RuntimeError, match="@protect decorator requires UXSPMiddleware to be installed"):
+        test_client.post("/api/broken", json={"hello": "world"})
+
+
+def test_fastapi_streaming_response(server_identity, client_identity):
+    from fastapi.responses import StreamingResponse
+    app = FastAPI()
+    app.add_middleware(UXSPFastAPIMiddleware, identity=server_identity)
+    uxsp.secure.register_peer(client_identity.public_card())
+
+    @app.post("/api/stream")
+    @protect(server_identity=server_identity)
+    async def stream_endpoint(request: Request):
+        async def generate():
+            yield b"chunk1"
+            yield b"chunk2"
+        return StreamingResponse(generate())
+
+    test_client = TestClient(app)
+
+    pkg = uxsp.secure.Send(
+        receiver=server_identity.public_card(),
+        item={"hello": "stream"},
+        sender=client_identity,
+    )
+
+    res = test_client.post("/api/stream", content=pkg.to_json(), headers={"X-UXSP-Package": "1"})
+    assert res.status_code == 200
+    # Process the stream
+    lines = res.content.split(b"\n")
+    valid_chunks = [L for L in lines if L.strip()]
+    assert len(valid_chunks) == 2
+    # Verify we can decrypt the chunk
+    import json
+    chunk_pkg = uxsp.secure.SecurePackage.from_dict(json.loads(valid_chunks[0].decode("utf-8")))
+    dec = uxsp.secure.Receive(sender=server_identity.public_card(), package=chunk_pkg, receiver=client_identity)
+    assert dec == b"chunk1"
+
+
+def test_fastapi_max_response_size(server_identity, client_identity):
+    from fastapi.responses import Response
+    from starlette.requests import Request
+    
+    app = FastAPI()
+    middleware = UXSPFastAPIMiddleware(app, identity=server_identity, max_response_size=5)
+    
+    # We will manually call dispatch to avoid BaseHTTPMiddleware wrapping it in a StreamingResponse
+    async def dummy_receive(): return {"type": "http.request", "body": b"", "more_body": False}
+    scope = {"type": "http", "method": "POST", "path": "/api/big", "headers": []}
+    req = Request(scope, receive=dummy_receive)
+    async def mock_call_next(request):
+        request.state.uxsp_force_encrypt = True
+        request.state.uxsp_sender_card = client_identity.public_card()
+        return Response(content=b"too_big_response")
+
+    with pytest.raises(ValueError, match="exceeds max_response_size"):
+        import asyncio
+        asyncio.run(middleware.dispatch(req, mock_call_next))
+
+
+def test_fastapi_json_response_mock(server_identity, client_identity):
+    from fastapi.responses import Response
+    from starlette.requests import Request
+    
+    app = FastAPI()
+    middleware = UXSPFastAPIMiddleware(app, identity=server_identity)
+    
+    async def dummy_receive(): return {"type": "http.request", "body": b"", "more_body": False}
+    scope = {"type": "http", "method": "POST", "path": "/api/small", "headers": []}
+    req = Request(scope, receive=dummy_receive)
+    
+    async def mock_call_next(request):
+        request.state.uxsp_force_encrypt = True
+        request.state.uxsp_sender_card = client_identity.public_card()
+        # Mocking a normal Response with a body attribute
+        resp = Response(content=b'{"mock": "data"}', headers={"x-custom": "header"})
+        return resp
+
+    import asyncio
+    import json
+    ret = asyncio.run(middleware.dispatch(req, mock_call_next))
+    
+    assert ret.status_code == 200
+    assert ret.headers["X-UXSP-Package"] == "1"
+    
+    body = ret.body
+    pkg = uxsp.secure.SecurePackage.from_dict(json.loads(body.decode("utf-8")))
+    dec = uxsp.secure.Receive(sender=server_identity.public_card(), package=pkg, receiver=client_identity)
+    assert dec == {"mock": "data"}
 

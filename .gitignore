@@ -122,3 +122,5 @@ pnpm-lock.yaml
 local_keys/
 .gemini/
 .antigravity/
+
+out.txt

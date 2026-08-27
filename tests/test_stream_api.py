@@ -190,3 +190,53 @@ def test_stream_bytes_and_json_string_packages(tmp_path, alice_and_bob):
     out_file_rb = tmp_path / "out_rb.bin"
     ReceiveStream(packages_or_stream=rb_fd, output_file=out_file_rb, sender=alice.public_card(), receiver=bob)
     assert out_file_rb.read_bytes() == data
+
+def test_chunked_stream_transfer_exceptions_and_empty(tmp_path):
+    from uxsp.core.chunking import create_chunked_stream_transfer, ChunkValidationError, UXSPChunk
+
+    with pytest.raises(ChunkValidationError, match="chunk_size must be positive"):
+        next(create_chunked_stream_transfer(tmp_path / "dummy.txt", chunk_size=0))
+
+    with pytest.raises(ChunkValidationError, match="File not found"):
+        next(create_chunked_stream_transfer(tmp_path / "non_existent_stream.bin"))
+
+    # Test 0-byte file (lines 393-408)
+    empty_file = tmp_path / "empty_stream.dat"
+    empty_file.touch()
+
+    gen = create_chunked_stream_transfer(empty_file)
+    chunk1 = next(gen)
+    
+    parsed = UXSPChunk.from_bytes(chunk1)
+    assert parsed.total_chunks == 1
+    assert parsed.chunk_index == 0
+    assert parsed.body == b""
+    
+    with pytest.raises(StopIteration):
+        next(gen)
+
+    # Test file with data (lines 381, 387, 410-428)
+    data_file = tmp_path / "data_stream.dat"
+    data_file.write_bytes(b"hello world")
+    
+    gen2 = create_chunked_stream_transfer(data_file, chunk_size=5)
+    
+    # Chunk 1: "hello"
+    c1 = UXSPChunk.from_bytes(next(gen2))
+    assert c1.total_chunks == 3
+    assert c1.chunk_index == 0
+    assert c1.body == b"hello"
+    
+    # Chunk 2: " worl"
+    c2 = UXSPChunk.from_bytes(next(gen2))
+    assert c2.chunk_index == 1
+    assert c2.body == b" worl"
+    
+    # Chunk 3: "d"
+    c3 = UXSPChunk.from_bytes(next(gen2))
+    assert c3.chunk_index == 2
+    assert c3.body == b"d"
+    
+    with pytest.raises(StopIteration):
+        next(gen2)
+
