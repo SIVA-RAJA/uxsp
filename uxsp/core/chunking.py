@@ -351,6 +351,83 @@ def create_chunked_transfer(
     return packed
 
 
+def create_chunked_stream_transfer(
+    file_path: str | __import__("pathlib").Path,
+    *,
+    chunk_size: int = 32 * 1024,
+    kind: ChunkKind = "binary",
+    filename: str | None = None,
+    content_type: str = "application/octet-stream",
+    encoding: str | None = None,
+) -> __import__("typing").Generator[bytes, None, None]:
+    """
+    Stream a file from disk, yielding serialised chunk payloads ready for encryption.
+    Reads the file twice: once to compute the total SHA-256 hash and chunk count,
+    and a second time to yield the chunks progressively to save memory.
+    """
+    from pathlib import Path
+    
+    if chunk_size <= 0:
+        raise ChunkValidationError("chunk_size must be positive.")
+
+    p = Path(file_path)
+    if not p.is_file():
+        raise ChunkValidationError(f"File not found: {file_path}")
+
+    file_size = p.stat().st_size
+    if file_size == 0:
+        total = 1
+    else:
+        total = (file_size + chunk_size - 1) // chunk_size
+
+    # Pass 1: Compute full file hash
+    h = hashlib.sha256()
+    with p.open("rb") as f:
+        while chunk_bytes := f.read(chunk_size):
+            h.update(chunk_bytes)
+    file_hash = h.hexdigest()
+    
+    transfer_id = uuid.uuid4().hex
+
+    # Pass 2: Yield chunks
+    if file_size == 0:
+        chunk_hash = _sha256_hex(b"")
+        uxsp_chunk = UXSPChunk(
+            transfer_id=transfer_id,
+            chunk_index=0,
+            total_chunks=total,
+            file_hash_sha256=file_hash,
+            chunk_hash_sha256=chunk_hash,
+            kind=kind,
+            body=b"",
+            filename=filename,
+            content_type=content_type,
+            encoding=encoding,
+        )
+        yield uxsp_chunk.to_bytes()
+        return
+
+    with p.open("rb") as f:
+        for i in range(total):
+            chunk_body = f.read(chunk_size)
+            if not chunk_body:
+                break
+            chunk_hash = _sha256_hex(chunk_body)
+            uxsp_chunk = UXSPChunk(
+                transfer_id=transfer_id,
+                chunk_index=i,
+                total_chunks=total,
+                file_hash_sha256=file_hash,
+                chunk_hash_sha256=chunk_hash,
+                kind=kind,
+                body=chunk_body,
+                filename=filename,
+                content_type=content_type,
+                encoding=encoding,
+            )
+            yield uxsp_chunk.to_bytes()
+
+
 def reassemble_chunked_transfer(
     packed_chunks: Sequence[bytes | bytearray],
 ) -> tuple[dict[str, Any], bytes]:

@@ -1,5 +1,7 @@
 import { SecurePackage, CreatePackageOptions, PublicCard } from "./types.js";
 import { validatePackage, validatePublicCard } from "./schema.js";
+import { Identity } from "./identity.js";
+import { seal, openSeal } from "./seal.js";
 
 /**
  * UXSP High-Level Browser Client SDK.
@@ -25,6 +27,43 @@ export class UXSPClient {
       throw new Error("Failed to validate created UXSP SecurePackage against wire schema.");
     }
     return pkg;
+  }
+
+  /**
+   * Create an encrypted SecurePackage from plaintext data.
+   */
+  static async createEncryptedPackage(
+    sender: Identity,
+    recipientCard: PublicCard,
+    plaintext: Uint8Array,
+    dataType: string = "TEXT",
+    metadata: Record<string, unknown> = {}
+  ): Promise<SecurePackage> {
+    const envelope = await seal(sender, recipientCard, plaintext);
+    return this.createPackage({
+      sender_id: sender.entity_id,
+      receiver_id: recipientCard.entity_id,
+      data_type: dataType,
+      envelope: envelope,
+      metadata: metadata,
+    });
+  }
+
+  /**
+   * Decrypt a SecurePackage using the receiver's identity.
+   */
+  static async openEncryptedPackage(
+    receiver: Identity,
+    senderCard: PublicCard,
+    pkg: SecurePackage
+  ): Promise<Uint8Array> {
+    if (pkg.is_chunked) {
+      throw new Error("Chunked packages are not yet supported for client-side decryption.");
+    }
+    if (!pkg.envelope) {
+      throw new Error("SecurePackage is missing its envelope.");
+    }
+    return await openSeal(receiver, senderCard, pkg.envelope);
   }
 
   /**

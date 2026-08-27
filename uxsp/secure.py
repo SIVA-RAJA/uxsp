@@ -30,7 +30,7 @@ import threading
 from collections.abc import Callable, Generator, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, BinaryIO, cast
+from typing import Any, Generator, BinaryIO, cast
 
 from uxsp.core.chunking import (
     create_chunked_transfer,
@@ -488,6 +488,78 @@ def _secure_send_payload(
     return package
 
 
+def _secure_send_stream(
+    receiver_id: str | int | PublicCard | Identity | None = None,
+    file_path: str | Path | None = None,
+    data_type: str = "file",
+    *,
+    sender_identity: Identity | None = None,
+    sender: Identity | None = None,
+    receiver: str | int | PublicCard | Identity | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> Generator[SecurePackage, None, None]:
+    """
+    Encrypt and seal a large file directly from disk, yielding one SecurePackage per chunk.
+    """
+    from uxsp.core.chunking import create_chunked_stream_transfer
+    
+    rec_target = receiver if receiver is not None else receiver_id
+    if rec_target is None:
+        raise ValueError("Receiver identity or receiver_id must be provided.")
+
+    if isinstance(rec_target, Identity):
+        peer_card = rec_target.public_card()
+        rec_id = rec_target.entity_id
+    elif isinstance(rec_target, PublicCard):
+        peer_card = rec_target
+        rec_id = rec_target.entity_id
+    else:
+        rec_id = _normalize_id(rec_target)
+        peer_card = _GLOBAL_CONTEXT.get_peer(rec_id)
+
+    sender_obj = sender or sender_identity or _GLOBAL_CONTEXT.get_identity()
+    meta = metadata or {}
+
+    if not file_path:
+        raise ValueError("file_path must be provided for streaming.")
+
+    # Yield individual chunk packages
+    chunk_stream = create_chunked_stream_transfer(file_path, chunk_size=16 * 1024, kind="binary")
+    
+    for chunk_bytes in chunk_stream:
+        chunk_env = sender_obj.seal_for(chunk_bytes, peer_card)
+        package = SecurePackage(
+            sender_id=sender_obj.entity_id,
+            receiver_id=rec_id,
+            data_type=data_type,
+            is_chunked=True,
+            chunks=[chunk_env.to_dict()],
+            metadata=meta,
+        )
+        yield package
+
+def SendStream(
+    receiver_id: str | int | PublicCard | Identity | None = None,
+    file_path: str | Path | None = None,
+    *,
+    receiver: str | int | PublicCard | Identity | None = None,
+    sender: Identity | None = None,
+    sender_identity: Identity | None = None,
+    data_type: str = "file",
+    metadata: dict[str, Any] | None = None,
+) -> Generator[SecurePackage, None, None]:
+    """Encrypt and stream a large file as a generator of SecurePackages."""
+    return _secure_send_stream(
+        receiver_id=receiver_id,
+        file_path=file_path,
+        data_type=data_type,
+        receiver=receiver,
+        sender=sender,
+        sender_identity=sender_identity,
+        metadata=metadata,
+    )
+
+
 def _secure_receive_payload(
     sender_id: str | int | PublicCard | Identity | None = None,
     package_input: Any = None,
@@ -591,12 +663,22 @@ def SendVideo(
     filename: str | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
-) -> SecurePackage:
+) -> SecurePackage | Generator[SecurePackage, None, None]:
     """Encrypt and send a video to receiver."""
     if isinstance(video_path_or_bytes, (str, Path)):
         if not _safe_is_file(video_path_or_bytes):
             raise SecureSendError(f"File not found: {video_path_or_bytes}")
         p = Path(video_path_or_bytes)
+        if p.stat().st_size > 64 * 1024 * 1024:
+            return SendStream(
+                receiver_id=receiver_id,
+                file_path=p,
+                receiver=receiver,
+                sender=sender,
+                sender_identity=sender_identity,
+                data_type="video",
+                metadata=metadata,
+            )
         fname = filename or p.name or "video.mp4"
         ctype, _ = mimetypes.guess_type(str(p))
         packed = pack_file(p, content_type=ctype or "video/mp4")
@@ -658,12 +740,22 @@ def SendAudio(
     filename: str | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
-) -> SecurePackage:
+) -> SecurePackage | Generator[SecurePackage, None, None]:
     """Encrypt and send audio to receiver."""
     if isinstance(audio_path_or_bytes, (str, Path)):
         if not _safe_is_file(audio_path_or_bytes):
             raise SecureSendError(f"File not found: {audio_path_or_bytes}")
         p = Path(audio_path_or_bytes)
+        if p.stat().st_size > 64 * 1024 * 1024:
+            return SendStream(
+                receiver_id=receiver_id,
+                file_path=p,
+                receiver=receiver,
+                sender=sender,
+                sender_identity=sender_identity,
+                data_type="audio",
+                metadata=metadata,
+            )
         fname = filename or p.name or "audio.mp3"
         ctype, _ = mimetypes.guess_type(str(p))
         packed = pack_file(p, content_type=ctype or "audio/mpeg")
@@ -725,12 +817,22 @@ def SendPhoto(
     filename: str | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
-) -> SecurePackage:
+) -> SecurePackage | Generator[SecurePackage, None, None]:
     """Encrypt and send a photo/image to receiver."""
     if isinstance(photo_path_or_bytes, (str, Path)):
         if not _safe_is_file(photo_path_or_bytes):
             raise SecureSendError(f"File not found: {photo_path_or_bytes}")
         p = Path(photo_path_or_bytes)
+        if p.stat().st_size > 64 * 1024 * 1024:
+            return SendStream(
+                receiver_id=receiver_id,
+                file_path=p,
+                receiver=receiver,
+                sender=sender,
+                sender_identity=sender_identity,
+                data_type="photo",
+                metadata=metadata,
+            )
         fname = filename or p.name or "photo.jpg"
         ctype, _ = mimetypes.guess_type(str(p))
         packed = pack_file(p, content_type=ctype or "image/jpeg")
@@ -857,12 +959,22 @@ def SendDocument(
     filename: str | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
-) -> SecurePackage:
+) -> SecurePackage | Generator[SecurePackage, None, None]:
     """Encrypt and send a document to receiver."""
     if isinstance(doc_path_or_bytes, (str, Path)):
         if not _safe_is_file(doc_path_or_bytes):
             raise SecureSendError(f"File not found: {doc_path_or_bytes}")
         p = Path(doc_path_or_bytes)
+        if p.stat().st_size > 64 * 1024 * 1024:
+            return SendStream(
+                receiver_id=receiver_id,
+                file_path=p,
+                receiver=receiver,
+                sender=sender,
+                sender_identity=sender_identity,
+                data_type="document",
+                metadata=metadata,
+            )
         fname = filename or p.name or "document.bin"
         ctype, _ = mimetypes.guess_type(str(p))
         packed = pack_file(p, content_type=ctype or "application/octet-stream")
@@ -928,12 +1040,22 @@ def SendPDF(
     filename: str | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
-) -> SecurePackage:
+) -> SecurePackage | Generator[SecurePackage, None, None]:
     """Encrypt and send a PDF file to receiver."""
     if isinstance(pdf_path_or_bytes, (str, Path)):
         if not _safe_is_file(pdf_path_or_bytes):
             raise SecureSendError(f"File not found: {pdf_path_or_bytes}")
         p = Path(pdf_path_or_bytes)
+        if p.stat().st_size > 64 * 1024 * 1024:
+            return SendStream(
+                receiver_id=receiver_id,
+                file_path=p,
+                receiver=receiver,
+                sender=sender,
+                sender_identity=sender_identity,
+                data_type="pdf",
+                metadata=metadata,
+            )
         fname = filename or p.name or "document.pdf"
         packed = pack_file(p, content_type="application/pdf")
     elif isinstance(pdf_path_or_bytes, (bytes, bytearray)):
@@ -995,7 +1117,7 @@ def SendFile(
     content_type: str | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
-) -> SecurePackage:
+) -> SecurePackage | Generator[SecurePackage, None, None]:
     """Encrypt and send any file or file bytes to receiver."""
     if isinstance(file_path_or_bytes, (bytes, bytearray)):
         payload = UXSPPayload(
@@ -1259,12 +1381,22 @@ def SendArchive(
     filename: str | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
-) -> SecurePackage:
+) -> SecurePackage | Generator[SecurePackage, None, None]:
     """Encrypt and send a zip/tar archive to receiver."""
     if isinstance(archive_path_or_bytes, (str, Path)):
         if not _safe_is_file(archive_path_or_bytes):
             raise SecureSendError(f"File not found: {archive_path_or_bytes}")
         p = Path(archive_path_or_bytes)
+        if p.stat().st_size > 64 * 1024 * 1024:
+            return SendStream(
+                receiver_id=receiver_id,
+                file_path=p,
+                receiver=receiver,
+                sender=sender,
+                sender_identity=sender_identity,
+                data_type="archive",
+                metadata=metadata,
+            )
         fname = filename or p.name or "archive.zip"
         ctype, _ = mimetypes.guess_type(str(p))
         packed = pack_file(p, content_type=ctype or "application/zip")
@@ -1330,7 +1462,7 @@ def SendVoice(
     duration_seconds: float | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
-) -> SecurePackage:
+) -> SecurePackage | Generator[SecurePackage, None, None]:
     """Encrypt and send a voice note/message to receiver."""
     meta = metadata or {}
     if duration_seconds is not None:
@@ -1340,6 +1472,16 @@ def SendVoice(
         if not _safe_is_file(voice_path_or_bytes):
             raise SecureSendError(f"File not found: {voice_path_or_bytes}")
         p = Path(voice_path_or_bytes)
+        if p.stat().st_size > 64 * 1024 * 1024:
+            return SendStream(
+                receiver_id=receiver_id,
+                file_path=p,
+                receiver=receiver,
+                sender=sender,
+                sender_identity=sender_identity,
+                data_type="voice",
+                metadata=metadata,
+            )
         packed = pack_file(p, content_type="audio/ogg")
     elif isinstance(voice_path_or_bytes, (bytes, bytearray)):
         packed = pack_binary(voice_path_or_bytes, filename="voice.ogg", content_type="audio/ogg")

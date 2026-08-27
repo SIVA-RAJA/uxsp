@@ -74,6 +74,52 @@ class PyodideUXSPBridge:
             receiver=self.identity,
         )
 
+    def seal_binary(self, data: bytes | bytearray, recipient_card_json: str) -> str:
+        """Seal binary data for a recipient."""
+        card = PublicCard.from_dict(json.loads(recipient_card_json))
+        pkg = secure.SendBinary(
+            receiver=card,
+            data=data,
+            sender=self.identity,
+        )
+        return pkg.to_json()
+
+    def open_binary(self, package_json: str, sender_card_json: str | None = None) -> bytes:
+        """Open and decrypt a received binary package."""
+        pkg = secure.SecurePackage.from_dict(json.loads(package_json))
+        sender: Any = None
+        if sender_card_json:
+            sender = PublicCard.from_dict(json.loads(sender_card_json))
+        return secure.ReceiveBinary(
+            package=pkg,
+            sender=sender,
+            receiver=self.identity,
+        )
+
+    def seal_json(self, data_json_str: str, recipient_card_json: str) -> str:
+        """Seal a JSON string as a JSON data type."""
+        card = PublicCard.from_dict(json.loads(recipient_card_json))
+        data_obj = json.loads(data_json_str)
+        pkg = secure.SendJSON(
+            receiver=card,
+            data=data_obj,
+            sender=self.identity,
+        )
+        return pkg.to_json()
+
+    def open_json(self, package_json: str, sender_card_json: str | None = None) -> str:
+        """Open and decrypt a received JSON package, returning a JSON string."""
+        pkg = secure.SecurePackage.from_dict(json.loads(package_json))
+        sender: Any = None
+        if sender_card_json:
+            sender = PublicCard.from_dict(json.loads(sender_card_json))
+        result = secure.ReceiveJSON(
+            package=pkg,
+            sender=sender,
+            receiver=self.identity,
+        )
+        return json.dumps(result)
+
     def rotate_keys(self) -> str:
         """Rotate keys for the local browser identity and return updated card JSON."""
         self.identity = self.identity.rotate_keys()

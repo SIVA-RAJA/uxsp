@@ -68,11 +68,13 @@ class UXSPFlaskMiddleware:
         keystore: KeyStore | None = None,
         require_encryption: bool = False,
         exclude_paths: Sequence[str] | None = None,
+        max_response_size: int = 16 * 1024 * 1024,
     ) -> None:
         self.identity = identity
         self.keystore = keystore
         self.require_encryption = require_encryption
         self.exclude_paths = list(exclude_paths) if exclude_paths else ["/static"]
+        self.max_response_size = max_response_size
 
         if app is not None:
             self.init_app(app)
@@ -162,7 +164,36 @@ class UXSPFlaskMiddleware:
         server_identity = self._get_identity()
 
         if should_encrypt and sender_card is not None:
+            if response.is_streamed:
+                def encrypt_stream():
+                    for chunk in response.iter_encoded():
+                        if not chunk: continue
+                        out_pkg = Send(
+                            receiver=sender_card,
+                            item=chunk,
+                            sender=server_identity,
+                            data_type="binary"
+                        )
+                        yield out_pkg.to_json().encode("utf-8") + b"\n"
+                
+                from flask import Response as FlaskResponse
+                encrypted_response = FlaskResponse(
+                    encrypt_stream(),
+                    status=response.status_code,
+                    content_type="application/x-ndjson"
+                )
+                for k, v in response.headers.items():
+                    if k.lower() not in ("content-length", "content-type"):
+                        encrypted_response.headers[k] = v
+                encrypted_response.headers["X-UXSP-Package"] = "1"
+                encrypted_response.headers["X-UXSP-Sender"] = server_identity.entity_id
+                encrypted_response.headers["X-UXSP-Recipient"] = getattr(g, "uxsp_sender_id", "") or ""
+                return encrypted_response
+
             content = response.get_data()
+            if len(content) > self.max_response_size:
+                raise ValueError(f"Response exceeds max_response_size of {self.max_response_size} bytes. Use streaming response.")
+
             try:
                 resp_obj = json.loads(content.decode("utf-8"))
             except Exception:
@@ -201,6 +232,8 @@ def protect_route(
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
+            if not hasattr(g, "uxsp_encrypted"):
+                raise RuntimeError("@protect_route decorator requires UXSPFlaskMiddleware to be installed.")
             g.uxsp_force_encrypt = True
             return func(*args, **kwargs)
 

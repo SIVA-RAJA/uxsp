@@ -70,12 +70,14 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
         keystore: KeyStore | None = None,
         require_encryption: bool = False,
         exclude_paths: Sequence[str] | None = None,
+        max_response_size: int = 16 * 1024 * 1024,
     ) -> None:
         super().__init__(app)
         self.identity = identity
         self.keystore = keystore
         self.require_encryption = require_encryption
         self.exclude_paths = list(exclude_paths) if exclude_paths else ["/docs", "/openapi.json", "/redoc"]
+        self.max_response_size = max_response_size
 
     def _get_identity(self) -> Identity:
         if callable(self.identity):
@@ -181,16 +183,40 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
         # Encrypt outgoing response if request was encrypted or require_encryption is set
         should_encrypt = request.state.uxsp_encrypted or getattr(request.state, "uxsp_force_encrypt", False)
         if should_encrypt and request.state.uxsp_sender_card is not None:
-            # Consume response body
             resp_body = getattr(response, "body", None)
             body_iter = getattr(response, "body_iterator", None)
+            
             if resp_body is None and body_iter is not None:
-                chunks = []
-                async for chunk in body_iter:
-                    chunks.append(chunk)
-                resp_body = b"".join(chunks)
+                from starlette.responses import StreamingResponse
+                
+                async def encrypt_stream():
+                    async for chunk in body_iter:
+                        if not chunk: continue
+                        out_pkg = Send(
+                            receiver=request.state.uxsp_sender_card,
+                            item=chunk,
+                            sender=server_identity,
+                            data_type="binary"
+                        )
+                        yield out_pkg.to_json() + "\n"
+                
+                encrypted_response = StreamingResponse(
+                    encrypt_stream(),
+                    status_code=response.status_code,
+                    media_type="application/x-ndjson"
+                )
+                for k, v in response.headers.items():
+                    if k.lower() not in ("content-length", "content-type"):
+                        encrypted_response.headers[k] = v
+                encrypted_response.headers["X-UXSP-Package"] = "1"
+                encrypted_response.headers["X-UXSP-Sender"] = server_identity.entity_id
+                encrypted_response.headers["X-UXSP-Recipient"] = request.state.uxsp_sender_id or ""
+                return encrypted_response
 
             if resp_body:
+                if len(resp_body) > self.max_response_size:
+                    raise ValueError(f"Response exceeds max_response_size of {self.max_response_size} bytes. Use StreamingResponse instead.")
+                
                 try:
                     resp_obj = json.loads(resp_body.decode("utf-8"))
                 except Exception:
@@ -245,6 +271,8 @@ def protect(
                         break
 
             if request is not None:
+                if not hasattr(request.state, "uxsp_encrypted"):
+                    raise RuntimeError("@protect decorator requires UXSPMiddleware to be installed.")
                 request.state.uxsp_force_encrypt = True
 
             return await func(*args, **kwargs)
