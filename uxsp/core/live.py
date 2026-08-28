@@ -85,3 +85,127 @@ class LiveSession:
         if len(encrypted_frame) < 2 + meta_len:
             return b""
         return encrypted_frame[2 : 2 + meta_len]
+
+    def encrypt_voice_frame(
+        self,
+        frame: bytes | bytearray,
+        *,
+        codec: str = "opus",
+        sample_rate: int = 48000,
+        channels: int = 1,
+        sequence: int = 0,
+        is_muted: bool = False,
+        metadata: bytes = b"",
+    ) -> bytes:
+        """
+        Encrypt a live audio/voice frame with authenticated voice metadata.
+        """
+        import json
+
+        audio_meta = {
+            "type": "voice",
+            "codec": codec,
+            "sample_rate": sample_rate,
+            "channels": channels,
+            "sequence": sequence,
+            "is_muted": is_muted,
+        }
+        if metadata:
+            audio_meta["extra"] = metadata.hex()
+
+        meta_bytes = json.dumps(audio_meta, separators=(",", ":")).encode("utf-8")
+        return self.encrypt_frame(frame, metadata=meta_bytes)
+
+    def decrypt_voice_frame(
+        self,
+        encrypted_frame: bytes | bytearray,
+    ) -> tuple[bytes, dict[str, Any]]:
+        """
+        Decrypt a live voice audio frame and return (decrypted_audio_bytes, audio_metadata_dict).
+        """
+        import json
+
+        decrypted_frame, meta_bytes = self.decrypt_frame(encrypted_frame)
+        try:
+            audio_meta = json.loads(meta_bytes.decode("utf-8"))
+            if "extra" in audio_meta and isinstance(audio_meta["extra"], str):
+                audio_meta["extra_bytes"] = bytes.fromhex(audio_meta["extra"])
+        except Exception:
+            audio_meta = {"raw_metadata": meta_bytes}
+        return decrypted_frame, audio_meta
+
+
+class LiveVoiceSession(LiveSession):
+    """
+    Manages an encrypted live voice/audio call session between peers.
+    Supports zero-latency audio frame encryption (Opus, PCM, AAC)
+    with authenticated audio call metadata (codec, sample rate, sequence, mute state).
+    """
+
+    def __init__(
+        self,
+        key: bytes | None = None,
+        codec: str = "opus",
+        sample_rate: int = 48000,
+        channels: int = 1,
+    ) -> None:
+        super().__init__(key=key)
+        self.codec = codec
+        self.sample_rate = sample_rate
+        self.channels = channels
+        self.sequence = 0
+        self.is_muted = False
+
+    @classmethod
+    def generate_voice(
+        cls,
+        codec: str = "opus",
+        sample_rate: int = 48000,
+        channels: int = 1,
+    ) -> LiveVoiceSession:
+        """Create a new LiveVoiceSession with fresh cryptographic key and call settings."""
+        return cls(key=None, codec=codec, sample_rate=sample_rate, channels=channels)
+
+    def mute(self) -> None:
+        """Mute local audio transmission state."""
+        self.is_muted = True
+
+    def unmute(self) -> None:
+        """Unmute local audio transmission state."""
+        self.is_muted = False
+
+    def next_sequence(self) -> int:
+        """Increment and return the next audio packet sequence number."""
+        self.sequence += 1
+        return self.sequence
+
+    def encrypt_voice_frame(  # type: ignore[override]
+        self,
+        frame: bytes | bytearray,
+        *,
+        codec: str | None = None,
+        sample_rate: int | None = None,
+        channels: int | None = None,
+        sequence: int | None = None,
+        is_muted: bool | None = None,
+        metadata: bytes = b"",
+    ) -> bytes:
+        """
+        Encrypt a live audio frame using current voice session parameters.
+        """
+        seq = sequence if sequence is not None else self.next_sequence()
+        muted = is_muted if is_muted is not None else self.is_muted
+        cd = codec or self.codec
+        sr = sample_rate or self.sample_rate
+        ch = channels or self.channels
+
+        return super().encrypt_voice_frame(
+            frame,
+            codec=cd,
+            sample_rate=sr,
+            channels=ch,
+            sequence=seq,
+            is_muted=muted,
+            metadata=metadata,
+        )
+

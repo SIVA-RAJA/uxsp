@@ -293,3 +293,33 @@ async def test_async_live_session(alice_identity, bob_identity):
     
     # Verify the sessions matched keys
     assert sender_session.key == receiver_session.key
+
+
+@pytest.mark.asyncio
+async def test_async_live_voice_call(alice_identity, bob_identity):
+    pkg, sender_voice_session = await uxsp.aio.SendLiveVoiceCall(
+        receiver=bob_identity.public_card(),
+        sender=alice_identity,
+        codec="opus",
+        sample_rate=48000,
+        channels=1,
+    )
+    assert sender_voice_session is not None
+    assert pkg.data_type == "live_voice_session"
+
+    receiver_voice_session = await uxsp.aio.ReceiveLiveVoiceCall(
+        sender=alice_identity.public_card(),
+        package=pkg,
+        receiver=bob_identity,
+    )
+    assert receiver_voice_session is not None
+    assert sender_voice_session.key == receiver_voice_session.key
+    assert receiver_voice_session.codec == "opus"
+
+    # Test voice frame roundtrip
+    frame = b"opus_audio_frame_data"
+    enc = sender_voice_session.encrypt_voice_frame(frame)
+    dec, meta = receiver_voice_session.decrypt_voice_frame(enc)
+    assert dec == frame
+    assert meta["codec"] == "opus"
+

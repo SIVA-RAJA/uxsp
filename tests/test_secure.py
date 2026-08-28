@@ -1310,6 +1310,59 @@ class TestHighLevelIdentityLifecycle:
             await uxsp.aio.verify_peer_validity(bob)
 
 
+class TestLiveVoiceCalling:
+    def test_send_and_receive_live_voice_call(self, alice_and_bob):
+        alice, bob = alice_and_bob
+        set_identity(alice)
+        register_peer(bob)
+
+        pkg, session_alice = uxsp.SendLiveVoiceCall(bob.entity_id, codec="opus", sample_rate=48000, channels=2)
+        assert pkg.data_type == "live_voice_session"
+        assert session_alice.codec == "opus"
+
+        set_identity(bob)
+        register_peer(alice)
+        session_bob = uxsp.ReceiveLiveVoiceCall(alice.entity_id, package=pkg)
+        assert session_bob.key == session_alice.key
+        assert session_bob.codec == "opus"
+
+        # Exchange an encrypted live audio frame
+        audio_frame = b"\x00\xff\x11\x22\x33\x44"
+        enc_frame = session_alice.encrypt_voice_frame(audio_frame)
+        dec_frame, meta = session_bob.decrypt_voice_frame(enc_frame)
+        assert dec_frame == audio_frame
+        assert meta["codec"] == "opus"
+        assert meta["channels"] == 2
+
+    def test_polymorphic_live_voice_dispatch(self, alice_and_bob):
+        alice, bob = alice_and_bob
+        set_identity(alice)
+        register_peer(bob)
+
+        pkg = Send(bob.entity_id, data_type="live_voice_call")
+        assert pkg.data_type == "live_voice_session"
+
+        set_identity(bob)
+        register_peer(alice)
+        session_bob = Receive(alice.entity_id, package=pkg)
+        assert isinstance(session_bob, uxsp.LiveVoiceSession)
+
+    def test_polymorphic_live_session_dispatch(self, alice_and_bob):
+        alice, bob = alice_and_bob
+        set_identity(alice)
+        register_peer(bob)
+
+        pkg = Send(bob.entity_id, data_type="live_session")
+        assert pkg.data_type == "live_session"
+
+        set_identity(bob)
+        register_peer(alice)
+        session_bob = Receive(alice.entity_id, package=pkg)
+        assert isinstance(session_bob, uxsp.LiveSession)
+
+
+
+
 
 
 

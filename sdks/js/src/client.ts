@@ -111,4 +111,56 @@ export class UXSPClient {
     }
     return card;
   }
+
+  /**
+   * Create an encrypted live voice call negotiation package and session.
+   */
+  static async createLiveVoicePackage(
+    sender: Identity,
+    recipientCard: PublicCard,
+    options?: { codec?: string; sampleRate?: number; channels?: number; metadata?: Record<string, unknown> }
+  ): Promise<{ pkg: SecurePackage; session: import("./live.js").LiveVoiceSession }> {
+    const { LiveVoiceSession } = await import("./live.js");
+    const { envelope, session } = await LiveVoiceSession.createVoice(sender, recipientCard, options);
+    const meta = options?.metadata || {};
+    meta.codec = session.codec;
+    meta.sample_rate = session.sampleRate;
+    meta.channels = session.channels;
+    meta.uxsp_live_voice_exchange = true;
+
+    const pkg = this.createPackage({
+      sender_id: sender.entity_id,
+      receiver_id: recipientCard.entity_id,
+      data_type: "live_voice_session",
+      envelope: envelope,
+      metadata: meta,
+    });
+
+    return { pkg, session };
+  }
+
+  /**
+   * Open an incoming live voice call negotiation package and return the active LiveVoiceSession.
+   */
+  static async openLiveVoicePackage(
+    receiver: Identity,
+    senderCard: PublicCard,
+    pkg: SecurePackage
+  ): Promise<import("./live.js").LiveVoiceSession> {
+    const { LiveVoiceSession } = await import("./live.js");
+    if (!pkg.envelope) {
+      throw new Error("SecurePackage is missing its envelope.");
+    }
+    const meta = pkg.metadata || {};
+    const codec = (meta.codec as string) || "opus";
+    const sampleRate = (meta.sample_rate as number) || 48000;
+    const channels = (meta.channels as number) || 1;
+
+    return await LiveVoiceSession.acceptVoice(receiver, senderCard, pkg.envelope, {
+      codec,
+      sampleRate,
+      channels,
+    });
+  }
 }
+

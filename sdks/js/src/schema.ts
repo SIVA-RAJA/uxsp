@@ -16,9 +16,9 @@ export function validateEnvelope(envelope: unknown): envelope is UXSPEnvelope {
     typeof env.ciphertext === "string" &&
     typeof env.nonce === "string" &&
     typeof env.ephemeral_pub === "string" &&
-    typeof env.kem_ciphertext === "string" &&
     typeof env.classical_sig === "string" &&
-    typeof env.pqc_sig === "string"
+    (env.pqc_mode === "none" ||
+      (typeof env.kem_ciphertext === "string" && typeof env.pqc_sig === "string"))
   );
 }
 

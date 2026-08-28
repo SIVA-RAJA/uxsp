@@ -1650,6 +1650,12 @@ def Send(
             return SendBinary(receiver=rec, data=item, sender=snd, output_file=output_file, metadata=metadata)
         if dt == "file":
             return SendFile(receiver=rec, file_path_or_bytes=item, sender=snd, output_file=output_file, metadata=metadata)
+        if dt in {"live_voice_session", "live_voice_call", "live_voice", "voice_call"}:
+            pkg, _ = SendLiveVoiceCall(receiver=rec, sender=snd, metadata=metadata)
+            return pkg
+        if dt == "live_session":
+            pkg, _ = SendLiveSession(receiver=rec, sender=snd, metadata=metadata)
+            return pkg
 
     if isinstance(item, (str, Path)):
         if _safe_is_file(item):
@@ -1729,6 +1735,10 @@ def Receive(
         return ReceiveLocation(sender=snd, package=pkg, receiver=rec)
     if dt == "contact":
         return ReceiveContact(sender=snd, package=pkg, receiver=rec)
+    if dt == "live_session":
+        return ReceiveLiveSession(sender=snd, package=pkg, receiver=rec)
+    if dt in {"live_voice_session", "live_voice_call", "live_voice", "voice_call"}:
+        return ReceiveLiveVoiceCall(sender=snd, package=pkg, receiver=rec)
 
     # Fallback to generic payload or raw binary unpack
     raw = _secure_receive_payload(sender=snd, package_input=pkg, receiver=rec)
@@ -2009,3 +2019,80 @@ def ReceiveLiveSession(
         expected_type="live_session",
     )
     return LiveSession(key=key_bytes)
+
+
+def SendLiveVoiceCall(
+    receiver_id: str | int | PublicCard | Identity | None = None,
+    *,
+    receiver: str | int | PublicCard | Identity | None = None,
+    sender: Identity | None = None,
+    sender_identity: Identity | None = None,
+    codec: str = "opus",
+    sample_rate: int = 48000,
+    channels: int = 1,
+    metadata: dict[str, Any] | None = None,
+) -> tuple[SecurePackage, __import__("uxsp.core.live", fromlist=["LiveVoiceSession"]).LiveVoiceSession]:
+    """
+    Negotiate a high-performance AES-GCM LiveVoiceSession for live voice calling / audio streaming.
+    Returns a tuple: (The encrypted SecurePackage to send, The local LiveVoiceSession).
+    """
+    from uxsp.core.live import LiveVoiceSession
+
+    session = LiveVoiceSession.generate_voice(codec=codec, sample_rate=sample_rate, channels=channels)
+    meta = metadata or {}
+    meta["uxsp_live_voice_exchange"] = True
+    meta["codec"] = codec
+    meta["sample_rate"] = sample_rate
+    meta["channels"] = channels
+
+    pkg = _secure_send_payload(
+        receiver_id=receiver_id,
+        receiver=receiver,
+        sender=sender,
+        sender_identity=sender_identity,
+        payload_bytes=session.key,
+        data_type="live_voice_session",
+        metadata=meta,
+    )
+
+    return pkg, session
+
+
+def ReceiveLiveVoiceCall(
+    sender_id: str | int | PublicCard | Identity | None = None,
+    package: str | dict[str, Any] | SecurePackage | None = None,
+    *,
+    sender: str | int | PublicCard | Identity | None = None,
+    sender_card: PublicCard | Identity | None = None,
+    receiver: Identity | None = None,
+    receiver_identity: Identity | None = None,
+) -> __import__("uxsp.core.live", fromlist=["LiveVoiceSession"]).LiveVoiceSession:
+    """
+    Accept a high-performance AES-GCM LiveVoiceSession from a peer for live voice calling.
+    Returns the decrypted, ready-to-use LiveVoiceSession.
+    """
+    from uxsp.core.live import LiveVoiceSession
+
+    pkg = _resolve_package_input(package)
+    key_bytes = _secure_receive_payload(
+        sender_id=sender_id,
+        package_input=pkg,
+        sender=sender,
+        sender_card=sender_card,
+        receiver=receiver,
+        receiver_identity=receiver_identity,
+        expected_type="live_voice_session",
+    )
+    meta = pkg.metadata or {}
+    codec = meta.get("codec", "opus")
+    sample_rate = meta.get("sample_rate", 48000)
+    channels = meta.get("channels", 1)
+
+    return LiveVoiceSession(key=key_bytes, codec=codec, sample_rate=sample_rate, channels=channels)
+
+
+SendLiveVoice = SendLiveVoiceCall
+ReceiveLiveVoice = ReceiveLiveVoiceCall
+SendVoiceCall = SendLiveVoiceCall
+ReceiveVoiceCall = ReceiveLiveVoiceCall
+

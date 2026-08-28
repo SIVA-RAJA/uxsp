@@ -924,3 +924,17 @@ async def SendLiveSession(**kwargs):
 async def ReceiveLiveSession(**kwargs):
     import uxsp.secure as sync_secure
     return await asyncio.to_thread(sync_secure.ReceiveLiveSession, **kwargs)
+
+async def SendLiveVoiceCall(**kwargs):
+    import uxsp.secure as sync_secure
+    return await asyncio.to_thread(sync_secure.SendLiveVoiceCall, **kwargs)
+
+async def ReceiveLiveVoiceCall(**kwargs):
+    import uxsp.secure as sync_secure
+    return await asyncio.to_thread(sync_secure.ReceiveLiveVoiceCall, **kwargs)
+
+SendLiveVoice = SendLiveVoiceCall
+ReceiveLiveVoice = ReceiveLiveVoiceCall
+SendVoiceCall = SendLiveVoiceCall
+ReceiveVoiceCall = ReceiveLiveVoiceCall
+

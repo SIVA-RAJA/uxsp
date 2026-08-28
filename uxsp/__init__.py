@@ -39,6 +39,11 @@ __author__ = "SIVA RAJA S"
 __license__ = "MIT"
 
 # ─────────────────────────────────────────────
+# LIVE STREAMING & VOICE CALLS
+# ─────────────────────────────────────────────
+from uxsp.core.live import LiveSession, LiveVoiceSession
+
+# ─────────────────────────────────────────────
 # IDENTITY
 # ─────────────────────────────────────────────
 
@@ -255,6 +260,14 @@ from uxsp.secure import (
     SendZip,
     SendStream,
     ReceiveStream,
+    SendLiveSession,
+    ReceiveLiveSession,
+    SendLiveVoiceCall,
+    ReceiveLiveVoiceCall,
+    SendLiveVoice,
+    ReceiveLiveVoice,
+    SendVoiceCall,
+    ReceiveVoiceCall,
     TypeMismatchError,
     create_identity,
     set_identity,
@@ -339,6 +352,16 @@ __all__ = [
     "Receive",
     "SendStream",
     "ReceiveStream",
+    "LiveSession",
+    "LiveVoiceSession",
+    "SendLiveSession",
+    "ReceiveLiveSession",
+    "SendLiveVoiceCall",
+    "ReceiveLiveVoiceCall",
+    "SendLiveVoice",
+    "ReceiveLiveVoice",
+    "SendVoiceCall",
+    "ReceiveVoiceCall",
     # identity
     "Identity",
     "PublicCard",

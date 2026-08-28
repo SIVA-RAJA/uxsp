@@ -80,3 +80,49 @@ def test_livesession_exceptions():
     # Line 86: extract_metadata length header larger than buffer
     assert LiveSession.extract_metadata(b"\xff\xff\x00") == b""
 
+
+def test_livevoicesession_voice_frames():
+    from uxsp.core.live import LiveVoiceSession
+
+    session = LiveVoiceSession.generate_voice(codec="opus", sample_rate=48000, channels=2)
+    assert session.codec == "opus"
+    assert session.sample_rate == 48000
+    assert session.channels == 2
+    assert session.sequence == 0
+    assert not session.is_muted
+
+    session.mute()
+    assert session.is_muted
+    session.unmute()
+    assert not session.is_muted
+
+    audio_frame = b"\x01\x02\x03\x04\x05\x06"
+    encrypted = session.encrypt_voice_frame(audio_frame, metadata=b"mic1")
+
+    decrypted, meta = session.decrypt_voice_frame(encrypted)
+    assert decrypted == audio_frame
+    assert meta["type"] == "voice"
+    assert meta["codec"] == "opus"
+    assert meta["sample_rate"] == 48000
+    assert meta["channels"] == 2
+    assert meta["sequence"] == 1
+    assert meta["is_muted"] is False
+    assert meta["extra_bytes"] == b"mic1"
+
+    # Encrypt on base LiveSession as well
+    base_session = LiveSession.generate()
+    enc_base = base_session.encrypt_voice_frame(audio_frame, codec="pcm", sample_rate=16000, channels=1, sequence=5, is_muted=True)
+    dec_base, meta_base = base_session.decrypt_voice_frame(enc_base)
+    assert dec_base == audio_frame
+    assert meta_base["codec"] == "pcm"
+    assert meta_base["sample_rate"] == 16000
+    assert meta_base["sequence"] == 5
+    assert meta_base["is_muted"] is True
+
+    # Test corrupted json metadata handling in decrypt_voice_frame
+    raw_enc = base_session.encrypt_frame(audio_frame, metadata=b"not json")
+    dec_raw, meta_raw = base_session.decrypt_voice_frame(raw_enc)
+    assert dec_raw == audio_frame
+    assert meta_raw == {"raw_metadata": b"not json"}
+
+

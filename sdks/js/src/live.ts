@@ -14,7 +14,7 @@ const KEY_SIZE = 32;
 const NONCE_SIZE = 12;
 
 export class LiveSession {
-  private key: Uint8Array;
+  public key: Uint8Array;
 
   constructor(key: Uint8Array) {
     if (key.byteLength !== KEY_SIZE) {
@@ -107,3 +107,155 @@ export class LiveSession {
     return new LiveSession(key);
   }
 }
+
+export interface AudioMetadata {
+  type: string;
+  codec: string;
+  sampleRate: number;
+  channels: number;
+  sequence: number;
+  isMuted: boolean;
+  extra?: string;
+  extraBytes?: Uint8Array;
+  [key: string]: any;
+}
+
+export class LiveVoiceSession extends LiveSession {
+  public codec: string;
+  public sampleRate: number;
+  public channels: number;
+  public sequence: number = 0;
+  public isMuted: boolean = false;
+
+  constructor(key: Uint8Array, codec = "opus", sampleRate = 48000, channels = 1) {
+    super(key);
+    this.codec = codec;
+    this.sampleRate = sampleRate;
+    this.channels = channels;
+  }
+
+  mute(): void {
+    this.isMuted = true;
+  }
+
+  unmute(): void {
+    this.isMuted = false;
+  }
+
+  nextSequence(): number {
+    this.sequence += 1;
+    return this.sequence;
+  }
+
+  async encryptVoiceFrame(
+    frame: Uint8Array,
+    options?: {
+      codec?: string;
+      sampleRate?: number;
+      channels?: number;
+      sequence?: number;
+      isMuted?: boolean;
+      metadata?: Uint8Array;
+    }
+  ): Promise<Uint8Array> {
+    const seq = options?.sequence !== undefined ? options.sequence : this.nextSequence();
+    const muted = options?.isMuted !== undefined ? options.isMuted : this.isMuted;
+    const cd = options?.codec || this.codec;
+    const sr = options?.sampleRate || this.sampleRate;
+    const ch = options?.channels || this.channels;
+
+    const audioMeta: Record<string, any> = {
+      type: "voice",
+      codec: cd,
+      sample_rate: sr,
+      channels: ch,
+      sequence: seq,
+      is_muted: muted,
+    };
+
+    if (options?.metadata && options.metadata.byteLength > 0) {
+      audioMeta.extra = Array.from(options.metadata)
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+    }
+
+    const metaBytes = new TextEncoder().encode(JSON.stringify(audioMeta));
+    return this.encryptFrame(frame, metaBytes);
+  }
+
+  async decryptVoiceFrame(
+    encryptedFrame: Uint8Array
+  ): Promise<{ frame: Uint8Array; audioMetadata: AudioMetadata }> {
+    const { frame, metadata } = await this.decryptFrame(encryptedFrame);
+    try {
+      const metaText = new TextDecoder().decode(metadata);
+      const parsed = JSON.parse(metaText);
+      const audioMeta: AudioMetadata = {
+        type: parsed.type || "voice",
+        codec: parsed.codec || "opus",
+        sampleRate: parsed.sample_rate || 48000,
+        channels: parsed.channels || 1,
+        sequence: parsed.sequence || 0,
+        isMuted: Boolean(parsed.is_muted),
+      };
+
+      if (parsed.extra && typeof parsed.extra === "string") {
+        const hex = parsed.extra;
+        const match = hex.match(/.{1,2}/g);
+        if (match) {
+          audioMeta.extraBytes = new Uint8Array(match.map((byte: string) => parseInt(byte, 16)));
+        }
+      }
+
+      return { frame, audioMetadata: audioMeta };
+    } catch {
+      return {
+        frame,
+        audioMetadata: {
+          type: "raw",
+          codec: "unknown",
+          sampleRate: 0,
+          channels: 0,
+          sequence: 0,
+          isMuted: false,
+          extraBytes: metadata,
+        },
+      };
+    }
+  }
+
+  static async createVoice(
+    sender: Identity,
+    receiverCard: PublicCard,
+    options?: { codec?: string; sampleRate?: number; channels?: number }
+  ): Promise<{ envelope: UXSPEnvelope; session: LiveVoiceSession }> {
+    const key = new Uint8Array(KEY_SIZE);
+    crypto.getRandomValues(key);
+
+    const envelope = await seal(sender, receiverCard, key);
+    const session = new LiveVoiceSession(
+      key,
+      options?.codec || "opus",
+      options?.sampleRate || 48000,
+      options?.channels || 1
+    );
+
+    return { envelope, session };
+  }
+
+  static async acceptVoice(
+    receiver: Identity,
+    senderCard: PublicCard,
+    envelope: UXSPEnvelope,
+    options?: { codec?: string; sampleRate?: number; channels?: number }
+  ): Promise<LiveVoiceSession> {
+    const key = await openSeal(receiver, senderCard, envelope);
+    return new LiveVoiceSession(
+      key,
+      options?.codec || "opus",
+      options?.sampleRate || 48000,
+      options?.channels || 1
+    );
+  }
+}
+
