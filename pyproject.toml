@@ -54,12 +54,13 @@ dependencies = [
 
 [project.optional-dependencies]
 
-# Redis — distributed replay protection and rate limiting across servers.
-# redis >= 4.0.0 required for atomic SET NX EX used in RedisNonceStore.
-redis    = ["redis >= 4.0.0"]
+# Async — enables uxsp.aio tag (async dispatchers & streaming; built-in to python)
+aio = []
 
-# Postgres — durable nonce audit log via PostgresNonceStore.
+# Storage Backends
+redis    = ["redis >= 4.0.0"]
 postgres = ["psycopg2-binary >= 2.9.0"]
+db       = ["redis >= 4.0.0", "psycopg2-binary >= 2.9.0"]
 
 # Framework Integrations — 1-line middleware & decorators for FastAPI, Django, and Flask
 fastapi    = ["fastapi >= 0.100.0", "starlette >= 0.27.0", "httpx2 >= 2.12.0"]
@@ -68,10 +69,41 @@ flask      = ["flask >= 2.0.0"]
 frameworks = [
     "fastapi >= 0.100.0",
     "starlette >= 0.27.0",
+    "httpx2 >= 2.12.0",
     "django >= 4.0.0",
     "flask >= 2.0.0",
 ]
+
+# Framework-Specific Full Stacks (includes framework + redis + postgres)
+all-django = [
+    "django >= 4.0.0",
+    "redis >= 4.0.0",
+    "psycopg2-binary >= 2.9.0",
+]
+all-flask = [
+    "flask >= 2.0.0",
+    "redis >= 4.0.0",
+    "psycopg2-binary >= 2.9.0",
+]
+all-fastapi = [
+    "fastapi >= 0.100.0",
+    "starlette >= 0.27.0",
+    "httpx2 >= 2.12.0",
+    "redis >= 4.0.0",
+    "psycopg2-binary >= 2.9.0",
+]
+
+# All Optional Dependencies
 all = [
+    "fastapi >= 0.100.0",
+    "starlette >= 0.27.0",
+    "httpx2 >= 2.12.0",
+    "django >= 4.0.0",
+    "flask >= 2.0.0",
+    "redis >= 4.0.0",
+    "psycopg2-binary >= 2.9.0",
+]
+full = [
     "fastapi >= 0.100.0",
     "starlette >= 0.27.0",
     "httpx2 >= 2.12.0",
