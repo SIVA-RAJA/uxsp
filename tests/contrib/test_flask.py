@@ -251,7 +251,7 @@ def test_flask_streaming_response(server_identity, client_identity):
         def generate():
             yield b"chunk1"
             yield b"chunk2"
-        return Response(generate(), mimetype="application/octet-stream")
+        return Response(generate(), mimetype="application/octet-stream", headers={"X-Custom-Header": "custom"})
 
     test_client = app.test_client()
     pkg = uxsp.secure.Send(

@@ -167,7 +167,7 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
 
                 async def receive_override() -> dict[str, Any]:
                     if getattr(request.state, "is_done", False):
-                        if original_receive:
+                        if original_receive is not None:
                             # Safely fetch the next message (likely disconnect) if endpoint is done
                             return await original_receive()
                         return {"type": "http.disconnect"}
@@ -175,7 +175,7 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
                     if not _receive_state["consumed"]:
                         _receive_state["consumed"] = True
                         return {"type": "http.request", "body": decrypted_bytes, "more_body": False}
-                    if original_receive:
+                    if original_receive is not None:
                         return await original_receive()
                     return {"type": "http.disconnect"}
 

@@ -78,6 +78,7 @@ def _require_open_context(
     expected_recipient_id: str | None,
     max_age_seconds: int,
     clock_skew_seconds: int,
+    allow_classical_only: bool = False,
 ) -> dict[str, Any]:
     """
     Validate all required fields, timestamps, and recipient of an envelope dict.
@@ -89,8 +90,13 @@ def _require_open_context(
     if envelope.get("version") != "UXSP-1":
         raise EnvelopeValidationError(f"Unknown envelope version: {envelope.get('version')}")
 
+    is_classical_only = envelope.get("pqc_mode") == "none"
+
+    if is_classical_only and not allow_classical_only:
+        raise EnvelopeValidationError("Classical-only envelope rejected (allow_classical_only=False).")
+
     # enforce required fields — no silent defaults
-    for field in (
+    required_fields = [
         "ciphertext",
         "nonce",
         "sender_id",
@@ -98,10 +104,12 @@ def _require_open_context(
         "timestamp",
         "envelope_nonce",
         "ephemeral_pub",
-        "kem_ciphertext",
         "classical_sig",
-        "pqc_sig",
-    ):
+    ]
+    if not is_classical_only:
+        required_fields.extend(["kem_ciphertext", "pqc_sig"])
+
+    for field in required_fields:
         if field not in envelope:
             raise EnvelopeValidationError(
                 f"Envelope missing required field: '{field}'. "
@@ -138,7 +146,7 @@ def _require_open_context(
         ct = bytes.fromhex(envelope["ciphertext"])
         nonce = bytes.fromhex(envelope["nonce"])
         ephemeral_pub = bytes.fromhex(envelope["ephemeral_pub"])
-        kem_ciphertext = bytes.fromhex(envelope["kem_ciphertext"])
+        kem_ciphertext = bytes.fromhex(envelope["kem_ciphertext"]) if not is_classical_only else b""
     except (ValueError, TypeError) as exc:
         raise EnvelopeValidationError(
             f"Envelope contains invalid hex data: {exc}. Possible malformed or tampered envelope."
@@ -150,11 +158,12 @@ def _require_open_context(
         "recipient_id": envelope["recipient_id"],
         "envelope_nonce": envelope["envelope_nonce"],
         "classical_sig": envelope["classical_sig"],
-        "pqc_sig": envelope["pqc_sig"],
+        "pqc_sig": envelope.get("pqc_sig", ""),
         "ciphertext": ct,
         "nonce": nonce,
         "ephemeral_pub": ephemeral_pub,
         "kem_ciphertext": kem_ciphertext,
+        "is_classical_only": is_classical_only,
     }
 
 
@@ -165,6 +174,7 @@ def verify_envelope(
     expected_sender_id: str | None = None,
     max_age_seconds: int = 300,
     clock_skew_seconds: int = 30,
+    allow_classical_only: bool = False,
 ) -> dict[str, Any]:
     """
     Verify all signatures and metadata on an envelope without decrypting it.
@@ -182,6 +192,7 @@ def verify_envelope(
         expected_recipient_id,
         max_age_seconds,
         clock_skew_seconds,
+        allow_classical_only=allow_classical_only,
     )
     if expected_sender_id is not None and ctx["sender_id"] != expected_sender_id:
         raise EnvelopeValidationError(
@@ -204,10 +215,11 @@ def verify_envelope(
 
     sigs = {
         "classical_sig": ctx["classical_sig"],
-        "pqc_sig": ctx["pqc_sig"],
     }
+    if not ctx["is_classical_only"]:
+        sigs["pqc_sig"] = ctx["pqc_sig"]
 
-    if not hybrid_verify(signable, sigs, sender_public_keys):
+    if not hybrid_verify(signable, sigs, sender_public_keys, allow_classical_only=ctx["is_classical_only"]):
         raise EnvelopeValidationError(
             "Signature verification failed. Envelope tampered or sender identity invalid."
         )
@@ -222,7 +234,10 @@ def decrypt_verified_envelope(
 ) -> bytes:
     """Decrypt an envelope context returned by verify_envelope()."""
     shared_key = hybrid_recipient_exchange(
-        verified_context["ephemeral_pub"], verified_context["kem_ciphertext"], recipient_keypair
+        verified_context["ephemeral_pub"],
+        verified_context["kem_ciphertext"],
+        recipient_keypair,
+        is_classical_only=verified_context.get("is_classical_only", False)
     )
 
     return decrypt(
@@ -325,7 +340,10 @@ def hybrid_sender_exchange(recipient_public_keys: dict[str, bytes]) -> dict[str,
 
 
 def hybrid_recipient_exchange(
-    ephemeral_pub: bytes, kem_ciphertext: bytes, my_private_keys: dict[str, dict[str, Any]]
+    ephemeral_pub: bytes,
+    kem_ciphertext: bytes,
+    my_private_keys: dict[str, dict[str, Any]],
+    is_classical_only: bool = False
 ) -> bytes:
     """
     Perform the recipient’s half of the hybrid key exchange.
@@ -341,7 +359,10 @@ def hybrid_recipient_exchange(
         classical_secret = compute_shared_secret(
             my_private_keys["exchange"]["private_key"], ephemeral_pub
         )
-        pqc_secret = decapsulate(kem_ciphertext, my_private_keys["kem"]["private_key"])
+        if is_classical_only:
+            pqc_secret = b""
+        else:
+            pqc_secret = decapsulate(kem_ciphertext, my_private_keys["kem"]["private_key"])
     except KeyError as exc:
         raise ValueError(f"my_private_keys missing required key: {exc}") from exc
 
@@ -384,7 +405,10 @@ def hybrid_sign(message: bytes, keypair: dict[str, dict[str, Any]]) -> dict[str,
 
 
 def hybrid_verify(
-    message: bytes, signatures: dict[str, str], sender_public_keys: dict[str, bytes]
+    message: bytes,
+    signatures: dict[str, str],
+    sender_public_keys: dict[str, bytes],
+    allow_classical_only: bool = False
 ) -> bool:
     """
     Verify both the Ed25519 and ML-DSA signatures on a message.
@@ -396,7 +420,8 @@ def hybrid_verify(
     """
     try:
         classical_sig_bytes = bytes.fromhex(signatures["classical_sig"])
-        pqc_sig_bytes = bytes.fromhex(signatures["pqc_sig"])
+        if not allow_classical_only:
+            pqc_sig_bytes = bytes.fromhex(signatures["pqc_sig"])
     except (TypeError, ValueError, KeyError) as exc:
         raise EnvelopeValidationError(f"Signature fields contain invalid hex data: {exc}") from exc
 
@@ -409,6 +434,11 @@ def hybrid_verify(
     classical_ok = verify(message, classical_sig_bytes, signing_pub)
     if not classical_ok:
         return False
+        
+    if allow_classical_only:
+        import logging
+        logging.getLogger("uxsp.crypto").warning("PQC is not active for this envelope (classical-only mode).")
+        return True
 
     return pqc_verify(message, pqc_sig_bytes, pqc_sig_pub)
 
@@ -499,6 +529,7 @@ def open_seal(
     expected_sender_id: str | None = None,
     max_age_seconds: int = 300,
     clock_skew_seconds: int = 30,
+    allow_classical_only: bool = False,
     associated_data: bytes = b"",
 ) -> bytes:
     """
@@ -521,6 +552,7 @@ def open_seal(
         expected_sender_id=expected_sender_id,
         max_age_seconds=max_age_seconds,
         clock_skew_seconds=clock_skew_seconds,
+        allow_classical_only=allow_classical_only,
     )
     return decrypt_verified_envelope(
         ctx,

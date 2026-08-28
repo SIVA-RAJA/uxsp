@@ -1037,3 +1037,70 @@ class TestModuleConstants:
 
     def test_max_header_len(self):
         assert _MAX_HEADER_LEN == 64 * 1024
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 14. create_chunked_stream_transfer
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestCreateChunkedStreamTransfer:
+    def test_zero_chunk_size_raises(self, tmp_path):
+        p = tmp_path / "test.dat"
+        p.write_bytes(b"data")
+        from uxsp.core.chunking import create_chunked_stream_transfer
+        with pytest.raises(ChunkValidationError, match="chunk_size must be positive"):
+            list(create_chunked_stream_transfer(str(p), chunk_size=0))
+
+    def test_file_not_found_raises(self):
+        from uxsp.core.chunking import create_chunked_stream_transfer
+        with pytest.raises(ChunkValidationError, match="File not found"):
+            list(create_chunked_stream_transfer("does_not_exist.bin"))
+
+    def test_empty_file_yields_one_chunk(self, tmp_path):
+        p = tmp_path / "empty.dat"
+        p.write_bytes(b"")
+        from uxsp.core.chunking import create_chunked_stream_transfer
+        chunks = list(create_chunked_stream_transfer(str(p)))
+        assert len(chunks) == 1
+        c = UXSPChunk.from_bytes(chunks[0])
+        assert c.body == b""
+
+    def test_stream_transfer_happy_path(self, tmp_path):
+        p = tmp_path / "data.dat"
+        p.write_bytes(b"x" * 100)
+        from uxsp.core.chunking import create_chunked_stream_transfer
+        chunks = list(create_chunked_stream_transfer(str(p), chunk_size=30))
+        assert len(chunks) == 4
+        # Verify it reassembles correctly
+        meta, assembled = reassemble_chunked_transfer(chunks)
+        assert assembled == b"x" * 100
+
+    def test_stream_transfer_truncated_file(self, tmp_path, monkeypatch):
+        # Line 414 test: what if the file size changes while reading?
+        p = tmp_path / "data.dat"
+        p.write_bytes(b"x" * 100)
+        from uxsp.core.chunking import create_chunked_stream_transfer
+        
+        # We can simulate this by intercepting open() to return a file object
+        # that lies about its length (or mock stat to lie about length).
+        import pathlib
+        original_stat = pathlib.Path.stat
+        
+        class MockStat:
+            st_size = 150 # claims to be 150 bytes, but file only has 100
+            
+        def mock_stat(self):
+            if self.name == "data.dat":
+                return MockStat()
+            return original_stat(self)
+            
+        monkeypatch.setattr(pathlib.Path, "stat", mock_stat)
+        
+        # Total calculated chunks will be 150 / 30 = 5 chunks
+        # But we only have 100 bytes (read will hit EOF early)
+        # It should break out early!
+        chunks = list(create_chunked_stream_transfer(str(p), chunk_size=30))
+        
+        # It yielded chunks up to what it could read
+        assert len(chunks) == 4
+

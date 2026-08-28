@@ -17,5 +17,8 @@
     "security"
   ],
   "author": "SIVA RAJA S",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^26.4.0"
+  }
 }

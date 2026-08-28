@@ -488,77 +488,6 @@ def _secure_send_payload(
     return package
 
 
-def _secure_send_stream(
-    receiver_id: str | int | PublicCard | Identity | None = None,
-    file_path: str | Path | None = None,
-    data_type: str = "file",
-    *,
-    sender_identity: Identity | None = None,
-    sender: Identity | None = None,
-    receiver: str | int | PublicCard | Identity | None = None,
-    metadata: dict[str, Any] | None = None,
-) -> Generator[SecurePackage, None, None]:
-    """
-    Encrypt and seal a large file directly from disk, yielding one SecurePackage per chunk.
-    """
-    from uxsp.core.chunking import create_chunked_stream_transfer
-    
-    rec_target = receiver if receiver is not None else receiver_id
-    if rec_target is None:
-        raise ValueError("Receiver identity or receiver_id must be provided.")
-
-    if isinstance(rec_target, Identity):
-        peer_card = rec_target.public_card()
-        rec_id = rec_target.entity_id
-    elif isinstance(rec_target, PublicCard):
-        peer_card = rec_target
-        rec_id = rec_target.entity_id
-    else:
-        rec_id = _normalize_id(rec_target)
-        peer_card = _GLOBAL_CONTEXT.get_peer(rec_id)
-
-    sender_obj = sender or sender_identity or _GLOBAL_CONTEXT.get_identity()
-    meta = metadata or {}
-
-    if not file_path:
-        raise ValueError("file_path must be provided for streaming.")
-
-    # Yield individual chunk packages
-    chunk_stream = create_chunked_stream_transfer(file_path, chunk_size=16 * 1024, kind="binary")
-    
-    for chunk_bytes in chunk_stream:
-        chunk_env = sender_obj.seal_for(chunk_bytes, peer_card)
-        package = SecurePackage(
-            sender_id=sender_obj.entity_id,
-            receiver_id=rec_id,
-            data_type=data_type,
-            is_chunked=True,
-            chunks=[chunk_env.to_dict()],
-            metadata=meta,
-        )
-        yield package
-
-def SendStream(
-    receiver_id: str | int | PublicCard | Identity | None = None,
-    file_path: str | Path | None = None,
-    *,
-    receiver: str | int | PublicCard | Identity | None = None,
-    sender: Identity | None = None,
-    sender_identity: Identity | None = None,
-    data_type: str = "file",
-    metadata: dict[str, Any] | None = None,
-) -> Generator[SecurePackage, None, None]:
-    """Encrypt and stream a large file as a generator of SecurePackages."""
-    return _secure_send_stream(
-        receiver_id=receiver_id,
-        file_path=file_path,
-        data_type=data_type,
-        receiver=receiver,
-        sender=sender,
-        sender_identity=sender_identity,
-        metadata=metadata,
-    )
-
 
 def _secure_receive_payload(
     sender_id: str | int | PublicCard | Identity | None = None,
@@ -672,7 +601,7 @@ def SendVideo(
         if p.stat().st_size > 64 * 1024 * 1024:
             return SendStream(
                 receiver_id=receiver_id,
-                file_path=p,
+                stream_or_path=p,
                 receiver=receiver,
                 sender=sender,
                 sender_identity=sender_identity,
@@ -749,7 +678,7 @@ def SendAudio(
         if p.stat().st_size > 64 * 1024 * 1024:
             return SendStream(
                 receiver_id=receiver_id,
-                file_path=p,
+                stream_or_path=p,
                 receiver=receiver,
                 sender=sender,
                 sender_identity=sender_identity,
@@ -826,7 +755,7 @@ def SendPhoto(
         if p.stat().st_size > 64 * 1024 * 1024:
             return SendStream(
                 receiver_id=receiver_id,
-                file_path=p,
+                stream_or_path=p,
                 receiver=receiver,
                 sender=sender,
                 sender_identity=sender_identity,
@@ -968,7 +897,7 @@ def SendDocument(
         if p.stat().st_size > 64 * 1024 * 1024:
             return SendStream(
                 receiver_id=receiver_id,
-                file_path=p,
+                stream_or_path=p,
                 receiver=receiver,
                 sender=sender,
                 sender_identity=sender_identity,
@@ -1049,7 +978,7 @@ def SendPDF(
         if p.stat().st_size > 64 * 1024 * 1024:
             return SendStream(
                 receiver_id=receiver_id,
-                file_path=p,
+                stream_or_path=p,
                 receiver=receiver,
                 sender=sender,
                 sender_identity=sender_identity,
@@ -1131,6 +1060,16 @@ def SendFile(
         if not _safe_is_file(file_path_or_bytes):
             raise SecureSendError(f"File not found: {file_path_or_bytes}")
         p = Path(file_path_or_bytes)
+        if p.stat().st_size > 64 * 1024 * 1024:
+            return SendStream(
+                stream_or_path=p,
+                receiver_id=receiver_id,
+                receiver=receiver,
+                sender=sender,
+                sender_identity=sender_identity,
+                data_type="file",
+                metadata=metadata,
+            )
         packed = pack_file(p, content_type=content_type)
     else:
         raise SecureSendError("file_path_or_bytes must be a path or bytes.")
@@ -1390,7 +1329,7 @@ def SendArchive(
         if p.stat().st_size > 64 * 1024 * 1024:
             return SendStream(
                 receiver_id=receiver_id,
-                file_path=p,
+                stream_or_path=p,
                 receiver=receiver,
                 sender=sender,
                 sender_identity=sender_identity,
@@ -1475,7 +1414,7 @@ def SendVoice(
         if p.stat().st_size > 64 * 1024 * 1024:
             return SendStream(
                 receiver_id=receiver_id,
-                file_path=p,
+                stream_or_path=p,
                 receiver=receiver,
                 sender=sender,
                 sender_identity=sender_identity,
@@ -1851,6 +1790,7 @@ def SendStream(
     filename: str | None = None,
     output_destination: str | Path | BinaryIO | None = None,
     metadata: dict[str, Any] | None = None,
+    data_type: str = "binary",
 ) -> Generator[SecurePackage, None, None] | Path | BinaryIO:
     """
     Encrypt and stream multi-gigabyte files or binary data generators chunk-by-chunk.
@@ -1885,6 +1825,7 @@ def SendStream(
                 filename=fname,
                 metadata=chunk_meta,
             )
+            pkg.data_type = data_type
             yield pkg
 
         if not has_yielded:

@@ -27,3 +27,17 @@ export function encodeUTF8(text: string): Uint8Array {
 export function decodeUTF8(buffer: ArrayBuffer | Uint8Array): string {
   return new TextDecoder().decode(buffer);
 }
+
+export function encodeHex(buffer: ArrayBuffer | Uint8Array): string {
+  const bytes = new Uint8Array(buffer);
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+export function decodeHex(hex: string): Uint8Array {
+  if (hex.length % 2 !== 0) throw new Error("Invalid hex string");
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+  }
+  return bytes;
+}

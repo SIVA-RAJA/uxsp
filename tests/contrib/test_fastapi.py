@@ -331,7 +331,7 @@ def test_fastapi_streaming_response(server_identity, client_identity):
         async def generate():
             yield b"chunk1"
             yield b"chunk2"
-        return StreamingResponse(generate())
+        return StreamingResponse(generate(), headers={"X-Custom-Header": "custom"})
 
     test_client = TestClient(app)
 
@@ -404,4 +404,112 @@ def test_fastapi_json_response_mock(server_identity, client_identity):
     pkg = uxsp.secure.SecurePackage.from_dict(json.loads(body.decode("utf-8")))
     dec = uxsp.secure.Receive(sender=server_identity.public_card(), package=pkg, receiver=client_identity)
     assert dec == {"mock": "data"}
+
+def test_fastapi_non_json_response_body(server_identity, client_identity):
+    from fastapi.responses import Response
+    from starlette.requests import Request
+    
+    app = FastAPI()
+    middleware = UXSPFastAPIMiddleware(app, identity=server_identity)
+    
+    async def dummy_receive(): return {"type": "http.request", "body": b"", "more_body": False}
+    scope = {"type": "http", "method": "POST", "path": "/api/small", "headers": []}
+    req = Request(scope, receive=dummy_receive)
+    
+    async def mock_call_next(request):
+        request.state.uxsp_force_encrypt = True
+        request.state.uxsp_sender_card = client_identity.public_card()
+        # Invalid utf8 and non-json
+        resp = Response(content=b'\xff\xfe Not JSON')
+        return resp
+
+    import asyncio
+    import json
+    ret = asyncio.run(middleware.dispatch(req, mock_call_next))
+    
+    body = ret.body
+    pkg = uxsp.secure.SecurePackage.from_dict(json.loads(body.decode("utf-8")))
+    dec = uxsp.secure.Receive(sender=server_identity.public_card(), package=pkg, receiver=client_identity)
+    # The errors="replace" will replace the invalid bytes with replacement characters
+    assert " Not JSON" in dec
+
+def test_fastapi_receive_override_done(server_identity, client_identity):
+    from fastapi.responses import Response
+    from starlette.requests import Request
+    import asyncio
+    
+    app = FastAPI()
+    middleware = UXSPFastAPIMiddleware(app, identity=server_identity)
+    uxsp.secure.register_peer(client_identity.public_card())
+    
+    # We will simulate multiple receive calls
+    receive_state = {"count": 0}
+    async def original_receive():
+        receive_state["count"] += 1
+        if receive_state["count"] == 1:
+            return {"type": "http.request", "body": b"", "more_body": False}
+        return {"type": "http.disconnect"}
+        
+    scope = {"type": "http", "method": "POST", "path": "/api/small", "headers": []}
+    req = Request(scope, receive=original_receive)
+    
+    # Simulate a successful decryption to populate request._receive
+    pkg = uxsp.secure.Send(
+        receiver=server_identity.public_card(),
+        item={"key": "value"},
+        sender=client_identity,
+    )
+    req.scope["headers"] = [(b"x-uxsp-package", b"1")]
+    
+    async def mock_call_next(request):
+        # We manually call the new receive a few times to hit the branches
+        msg1 = await request.scope["receive"]() # Should return the decrypted body
+        msg2 = await request.scope["receive"]() # Should return original_receive() output
+        request.state.is_done = True
+        msg3 = await request.scope["receive"]() # Should return original_receive() output when done
+        return Response(content=b'ok')
+
+    # We also mock the body reading
+    async def dummy_body():
+        return pkg.to_json().encode()
+    req.body = dummy_body
+
+    asyncio.run(middleware.dispatch(req, mock_call_next))
+
+def test_fastapi_receive_override_no_original_receive(server_identity, client_identity):
+    from fastapi.responses import Response
+    from starlette.requests import Request
+    import asyncio
+    
+    app = FastAPI()
+    middleware = UXSPFastAPIMiddleware(app, identity=server_identity)
+    uxsp.secure.register_peer(client_identity.public_card())
+    
+    scope = {"type": "http", "method": "POST", "path": "/api/small", "headers": [(b"x-uxsp-package", b"1")]}
+    req = Request(scope)
+    
+    # Explicitly set receive functions to None to trigger fallback lines
+    req.scope["receive"] = None
+    req._receive = None
+    
+    pkg = uxsp.secure.Send(
+        receiver=server_identity.public_card(),
+        item={"key": "value"},
+        sender=client_identity,
+    )
+    
+    async def mock_call_next(request):
+        msg1 = await request.scope["receive"]() # body
+        msg2 = await request.scope["receive"]() # disconnect fallback
+        assert msg2 == {"type": "http.disconnect"}
+        request.state.is_done = True
+        msg3 = await request.scope["receive"]() # disconnect fallback when done
+        assert msg3 == {"type": "http.disconnect"}
+        return Response(content=b'ok')
+
+    async def dummy_body():
+        return pkg.to_json().encode()
+    req.body = dummy_body
+
+    asyncio.run(middleware.dispatch(req, mock_call_next))
 

@@ -917,45 +917,10 @@ async def Receive(
 
 # ── 15. LIVE SESSION EXCHANGE ─────────────────────────────────
 
-async def SendLiveSession(
-    receiver_id: str | int | PublicCard | Identity | None = None,
-    *,
-    receiver: str | int | PublicCard | Identity | None = None,
-    sender: Identity | None = None,
-    sender_identity: Identity | None = None,
-    metadata: dict[str, Any] | None = None,
-) -> tuple[SecurePackage, __import__("uxsp.core.live", fromlist=["LiveSession"]).LiveSession]:
-    """Async: Negotiate a high-performance AES-GCM LiveSession for WebRTC video or socket streams."""
+async def SendLiveSession(**kwargs):
     import uxsp.secure as sync_secure
-    
-    return await asyncio.to_thread(
-        sync_secure.SendLiveSession,
-        receiver_id=receiver_id,
-        receiver=receiver,
-        sender=sender,
-        sender_identity=sender_identity,
-        metadata=metadata,
-    )
+    return await asyncio.to_thread(sync_secure.SendLiveSession, **kwargs)
 
-
-async def ReceiveLiveSession(
-    sender_id: str | int | PublicCard | Identity | None = None,
-    package: Any = None,
-    *,
-    sender: str | int | PublicCard | Identity | None = None,
-    sender_card: PublicCard | Identity | None = None,
-    receiver: Identity | None = None,
-    receiver_identity: Identity | None = None,
-) -> __import__("uxsp.core.live", fromlist=["LiveSession"]).LiveSession:
-    """Async: Accept a high-performance AES-GCM LiveSession from a peer."""
+async def ReceiveLiveSession(**kwargs):
     import uxsp.secure as sync_secure
-
-    return await asyncio.to_thread(
-        sync_secure.ReceiveLiveSession,
-        sender_id=sender_id,
-        package=package,
-        sender=sender,
-        sender_card=sender_card,
-        receiver=receiver,
-        receiver_identity=receiver_identity,
-    )
+    return await asyncio.to_thread(sync_secure.ReceiveLiveSession, **kwargs)

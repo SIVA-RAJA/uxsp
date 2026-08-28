@@ -278,7 +278,9 @@ def test_django_streaming_response(server_identity, client_identity):
         def generate():
             yield b"chunk1"
             yield b"chunk2"
-        return StreamingHttpResponse(generate(), content_type="application/octet-stream")
+        resp = StreamingHttpResponse(generate(), content_type="application/octet-stream")
+        resp["X-Custom-Header"] = "custom"
+        return resp
 
     middleware = UXSPDjangoMiddleware(view_func)
     middleware.identity = server_identity

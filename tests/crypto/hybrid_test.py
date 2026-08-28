@@ -306,6 +306,13 @@ class TestHybridKeyExchange:
         with pytest.raises(ValueError, match="missing required key"):
             hybrid.hybrid_recipient_exchange(FAKE_EPHEMERAL_PUB, FAKE_KEM_CT, kp)
 
+    def test_recipient_exchange_classical_only(self):
+        kp = _make_keypair()
+        key = hybrid.hybrid_recipient_exchange(
+            FAKE_EPHEMERAL_PUB, b"", kp, is_classical_only=True
+        )
+        assert key == FAKE_DERIVED_KEY
+
 
 # ═════════════════════════════════════════════════════════════
 # hybrid_sign / hybrid_verify
@@ -391,6 +398,15 @@ class TestHybridVerify:
         pub = {"signing_pub": FAKE_SIGNING_PUB}  # pqc_sig_pub missing
         with pytest.raises(EnvelopeValidationError, match="missing required key"):
             hybrid.hybrid_verify(b"msg", self._valid_sigs(), pub)
+
+    def test_verify_classical_only_allowed_logs_warning(self):
+        sigs = {"classical_sig": FAKE_CLASSICAL_SIG.hex()}
+        pub = {"signing_pub": FAKE_SIGNING_PUB, "pqc_sig_pub": FAKE_SIG_PUB}
+        # Assuming hybrid.verify is mocked to True
+        with patch("logging.Logger.warning") as mock_warning:
+            assert hybrid.hybrid_verify(b"msg", sigs, pub, allow_classical_only=True) is True
+            mock_warning.assert_called_once()
+            assert "PQC is not active for this envelope" in mock_warning.call_args[0][0]
 
 
 # ═════════════════════════════════════════════════════════════
@@ -519,6 +535,19 @@ class TestRequireOpenContext:
         env["kem_ciphertext"] = "ZZZZ"
         with pytest.raises(EnvelopeValidationError, match="invalid hex"):
             hybrid._require_open_context(env, None, 300, 30)
+
+    def test_classical_only_rejects_by_default(self):
+        env = _base_raw_envelope()
+        env["pqc_mode"] = "none"
+        with pytest.raises(EnvelopeValidationError, match="Classical-only envelope rejected"):
+            hybrid._require_open_context(env, None, 300, 30, allow_classical_only=False)
+
+    def test_classical_only_passes_if_allowed(self):
+        env = _base_raw_envelope()
+        env["pqc_mode"] = "none"
+        ctx = hybrid._require_open_context(env, None, 300, 30, allow_classical_only=True)
+        assert ctx["is_classical_only"] is True
+        assert ctx["kem_ciphertext"] == b""
 
     def test_happy_path_returns_parsed_dict(self):
         env = _base_raw_envelope()

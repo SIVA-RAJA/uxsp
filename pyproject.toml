@@ -62,7 +62,7 @@ redis    = ["redis >= 4.0.0"]
 postgres = ["psycopg2-binary >= 2.9.0"]
 
 # Framework Integrations — 1-line middleware & decorators for FastAPI, Django, and Flask
-fastapi    = ["fastapi >= 0.100.0", "starlette >= 0.27.0", "httpx >= 0.24.0"]
+fastapi    = ["fastapi >= 0.100.0", "starlette >= 0.27.0", "httpx2 >= 2.12.0"]
 django     = ["django >= 4.0.0"]
 flask      = ["flask >= 2.0.0"]
 frameworks = [
@@ -74,7 +74,7 @@ frameworks = [
 all = [
     "fastapi >= 0.100.0",
     "starlette >= 0.27.0",
-    "httpx >= 0.24.0",
+    "httpx2 >= 2.12.0",
     "django >= 4.0.0",
     "flask >= 2.0.0",
     "redis >= 4.0.0",
