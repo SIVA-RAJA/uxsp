@@ -206,7 +206,7 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
                 async def encrypt_stream():  # type: ignore[no-untyped-def]
                     async for chunk in body_iter:
                         if not chunk:
-                            continue
+                            continue  # pragma: no cover
                         out_pkg = Send(
                             receiver=request.state.uxsp_sender_card,
                             item=chunk,

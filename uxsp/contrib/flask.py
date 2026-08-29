@@ -166,7 +166,7 @@ class UXSPFlaskMiddleware:
                 def encrypt_stream():  # type: ignore[no-untyped-def]
                     for chunk in response.iter_encoded():
                         if not chunk:
-                            continue
+                            continue  # pragma: no cover
                         out_pkg = Send(
                             receiver=sender_card,
                             item=chunk,

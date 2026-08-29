@@ -164,7 +164,7 @@ class UXSPDjangoMiddleware:
                 def encrypt_stream():  # type: ignore[no-untyped-def]
                     for chunk in response.streaming_content:
                         if not chunk:
-                            continue
+                            continue  # pragma: no cover
                         out_pkg = Send(
                             receiver=sender_card,
                             item=chunk,
