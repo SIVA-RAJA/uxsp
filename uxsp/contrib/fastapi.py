@@ -244,7 +244,7 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
                     sender=server_identity,
                 )
 
-                encrypted_response = JSONResponse(  # type: ignore[assignment]
+                encrypted_response = JSONResponse(
                     content=out_pkg.to_dict(),
                     status_code=response.status_code,
                     headers=dict(response.headers),

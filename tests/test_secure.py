@@ -409,7 +409,8 @@ class Test14DataTypes:
         from pathlib import Path
         class MockStat:
             st_size = 70 * 1024 * 1024
-        def mock_stat(self):
+            st_mode = 33188
+        def mock_stat(self, *args, **kwargs):
             return MockStat()
         monkeypatch.setattr(Path, "stat", mock_stat)
 

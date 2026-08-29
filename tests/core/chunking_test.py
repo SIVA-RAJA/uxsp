@@ -1088,11 +1088,12 @@ class TestCreateChunkedStreamTransfer:
 
         class MockStat:
             st_size = 150 # claims to be 150 bytes, but file only has 100
+            st_mode = 33188 # stat.S_IFREG
 
-        def mock_stat(self):
+        def mock_stat(self, *args, **kwargs):
             if self.name == "data.dat":
                 return MockStat()
-            return original_stat(self)
+            return original_stat(self, *args, **kwargs)
 
         monkeypatch.setattr(pathlib.Path, "stat", mock_stat)
 
