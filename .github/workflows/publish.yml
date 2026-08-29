@@ -12,10 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -43,23 +43,23 @@ jobs:
 
     steps:
       - name: Checkout source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Cache liboqs C library
         id: cache-liboqs
         uses: actions/cache@v4
         with:
           path: ~/liboqs-install
-          key: ${{ runner.os }}-liboqs-v0.12.0
+          key: ${{ runner.os }}-liboqs-main-v1
           restore-keys: |
-            ${{ runner.os }}-liboqs-
+            ${{ runner.os }}-liboqs-main-
 
       - name: Compile and Install liboqs (if cache miss)
         if: steps.cache-liboqs.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake ninja-build git libssl-dev
-          git clone --depth=1 -b 0.12.0 https://github.com/open-quantum-safe/liboqs.git
+          git clone --depth=1 https://github.com/open-quantum-safe/liboqs.git
           cd liboqs
           mkdir build && cd build
           cmake -GNinja -DOQS_USE_OPENSSL=ON -DBUILD_SHARED_LIBS=ON -DCMAKE_INSTALL_PREFIX=$HOME/liboqs-install ..
@@ -78,7 +78,7 @@ jobs:
           echo "LD_LIBRARY_PATH=$(dirname $SO_PATH):$LD_LIBRARY_PATH" >> $GITHUB_ENV
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
@@ -105,10 +105,10 @@ jobs:
 
     steps:
       - name: Checkout source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
 
