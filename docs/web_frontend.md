@@ -1,72 +1,55 @@
-# Web & Frontend Interoperability Guide (For JS/TS Developers)
+# Web Frontend Integration (JavaScript / TypeScript)
 
-UXSP provides client interoperability for browser interfaces through Draft-07 JSON Schemas, a TypeScript/JavaScript SDK (`@siva_raja/uxsp`), and a WebAssembly/Pyodide browser runtime bridge.
+A major feature of UXSP is that it doesn't just encrypt data between backend servers. It can encrypt data **directly in the user's browser** before it even touches the network!
+
+If a hacker intercepts the network traffic between a user's laptop and your server, they will only see AES-GCM encrypted gibberish.
 
 ---
 
-## 1. JavaScript / TypeScript Browser SDK (`sdks/js/` & `@siva_raja/uxsp`)
+## 1. The `@siva_raja/uxsp` NPM Package
 
-The `@siva_raja/uxsp` SDK allows browser clients to create, parse, serialize, and validate UXSP wire format packages.
+We provide a companion JavaScript/TypeScript package. It uses WebAssembly (WASM) to run the exact same Post-Quantum cryptography algorithms in the browser.
 
 ### Installation
+You can install it in your React, Vue, Angular, or vanilla JS project:
+
 ```bash
 npm install @siva_raja/uxsp
 ```
 
-### Usage Example
-```typescript
-import { UXSPClient } from '@siva_raja/uxsp';
-
-// Initialize UXSP Client
-const client = new UXSPClient({
-  name: 'BrowserClient',
-  role: 'CLIENT'
-});
-
-// Get browser public card JSON to share with backend
-const publicCardJson = client.getPublicCardJson();
-
-// Build API request headers
-const headers = client.buildHeaders();
-// Headers: { "X-UXSP-Package": "1", "X-UXSP-Sender": "client_entity_id" }
-```
-
 ---
 
-## 2. Draft-07 JSON Schemas (`uxsp/schema/` & `uxsp.schema`)
+## 2. Protecting Data in the Frontend
 
-UXSP defines formal JSON Schema specifications for wire payloads:
+Imagine you are building a login page. Normally, the user types their password, and your frontend sends that password to the backend. Even over HTTPS, advanced attackers might find ways to intercept this.
 
-- **`envelope_schema.json`**: Schema for sealed `UXSP-1` post-quantum hybrid envelopes.
-- **`package_schema.json`**: Schema for single-envelope and chunked `SecurePackage` payloads.
-- **`public_card_schema.json`**: Schema for `UXSP-PUBCARD-1` public cards.
+With UXSP, you can encrypt the password in the frontend!
 
-### Validating Schemas in Python
-```python
-import uxsp.schema as schema
+### Example: Encrypting a Form Submission
 
-# Validate incoming JSON dictionary against schema
-schema.validate_package(package_dict)
-schema.validate_envelope(envelope_dict)
-schema.validate_public_card(card_dict)
+```javascript
+import { SecureContext, SendJSON } from '@siva_raja/uxsp';
+
+// 1. Load your Backend Server's Public Card
+// (You usually fetch this once when the app loads)
+const serverCard = { ... }; // JSON of the server's public card
+
+async function submitLogin(username, password) {
+  const loginData = { username, password };
+
+  // 2. Encrypt the data BEFORE sending it over the network!
+  const encryptedPackage = await SendJSON(loginData, serverCard);
+
+  // 3. Send the encrypted package to your API
+  const response = await fetch('https://api.yourwebsite.com/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(encryptedPackage)
+  });
+
+  const result = await response.json();
+  console.log("Response:", result);
+}
 ```
 
----
-
-## 3. WebAssembly & Pyodide Browser Bridge (`uxsp.wasm` / `uxsp.pyodide`)
-
-To run complete cryptographic operations inside browser Web Workers without JavaScript reimplementation, UXSP provides `PyodideUXSPBridge`:
-
-```python
-from uxsp.wasm import PyodideUXSPBridge
-from uxsp.pyodide import js_seal_text, js_open_text
-
-# Initialize bridge in Pyodide Web Worker
-bridge = PyodideUXSPBridge(name="WorkerClient")
-
-# Seal text in browser worker
-pkg_json = bridge.seal_text("Secret from browser worker", recipient_card_json)
-
-# Open text in browser worker
-decrypted_text = bridge.open_text(pkg_json, sender_card_json)
-```
+Because the data is encrypted in the frontend, it travels across the internet fully protected by Post-Quantum cryptography. When it reaches your server, your backend UXSP Middleware will automatically decrypt it!

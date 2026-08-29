@@ -1,17 +1,17 @@
-from .video import SendVideo, ReceiveVideo
-from .audio import SendAudio, ReceiveAudio
-from .photo import SendPhoto, ReceivePhoto, SendImage, ReceiveImage
-from .text import SendText, ReceiveText
-from .document import SendDocument, ReceiveDocument, SendDoc, ReceiveDoc
-from .pdf import SendPDF, ReceivePDF
-from .file import SendFile, ReceiveFile
-from .binary import SendBinary, ReceiveBinary
-from .json import SendJSON, ReceiveJSON
-from .html import SendHTML, ReceiveHTML
-from .archive import SendArchive, ReceiveArchive, SendZip, ReceiveZip
-from .voice import SendVoice, ReceiveVoice
-from .location import SendLocation, ReceiveLocation
-from .contact import SendContact, ReceiveContact
+from .archive import ReceiveArchive, ReceiveZip, SendArchive, SendZip
+from .audio import ReceiveAudio, SendAudio
+from .binary import ReceiveBinary, SendBinary
+from .contact import ReceiveContact, SendContact
+from .document import ReceiveDoc, ReceiveDocument, SendDoc, SendDocument
+from .file import ReceiveFile, SendFile
+from .html import ReceiveHTML, SendHTML
+from .json import ReceiveJSON, SendJSON
+from .location import ReceiveLocation, SendLocation
+from .pdf import ReceivePDF, SendPDF
+from .photo import ReceiveImage, ReceivePhoto, SendImage, SendPhoto
+from .text import ReceiveText, SendText
+from .video import ReceiveVideo, SendVideo
+from .voice import ReceiveVoice, SendVoice
 
 __all__ = [
     "SendVideo", "ReceiveVideo", "SendAudio", "ReceiveAudio", "SendPhoto", "ReceivePhoto",

@@ -2,6 +2,7 @@ import pytest
 
 from uxsp.core.live import LiveSession
 
+
 def test_livesession_generation():
     session = LiveSession.generate()
     assert len(session.key) == 32
@@ -16,7 +17,7 @@ def test_livesession_encryption():
     metadata = b'{"vol": 85}'
 
     encrypted = session.encrypt_frame(frame, metadata)
-    
+
     # Verify we can extract metadata without decryption key
     extracted_meta = LiveSession.extract_metadata(encrypted)
     assert extracted_meta == metadata
@@ -32,7 +33,7 @@ def test_livesession_tamper_metadata():
     metadata = b'{"vol": 85}'
 
     encrypted = session.encrypt_frame(frame, metadata)
-    
+
     # Tamper with the metadata length (first 2 bytes)
     tampered_len = bytearray(encrypted)
     tampered_len[1] = tampered_len[1] ^ 0xFF
@@ -48,26 +49,26 @@ def test_livesession_tamper_metadata():
 def test_livesession_tamper_ciphertext():
     session = LiveSession.generate()
     frame = b"hello video frame"
-    
+
     encrypted = session.encrypt_frame(frame)
-    
+
     tampered = bytearray(encrypted)
     tampered[-1] = tampered[-1] ^ 0xFF
-    
+
     with pytest.raises(ValueError, match="Decryption failed"):
         session.decrypt_frame(bytes(tampered))
 
 def test_livesession_ratcheting():
     session1 = LiveSession.generate()
     session2 = LiveSession(session1.key, session_id=session1.session_id_bytes)
-    
+
     session1._frame_count = 65535
     session2._frame_count = 65535
-    
+
     frame = b"hello ratchet"
     enc = session1.encrypt_frame(frame)
     assert session1._frame_count == 0
-    
+
     dec, _ = session2.decrypt_frame(enc)
     assert session2._frame_count == 0
     assert dec == frame
@@ -77,15 +78,15 @@ def test_livesession_replay_protection():
     session = LiveSession.generate()
     frame = b"hello replay"
     enc = session.encrypt_frame(frame)
-    
+
     dec, _ = session.decrypt_frame(enc, expected_seq=5)
     assert dec == frame
     assert session._last_seq == 5
-    
+
     from uxsp.core.replay import ReplayError
     with pytest.raises(ReplayError, match="Frame replay detected"):
         session.decrypt_frame(enc, expected_seq=5)
-        
+
     with pytest.raises(ReplayError, match="Frame replay detected"):
         session.decrypt_frame(enc, expected_seq=4)
 
@@ -93,10 +94,10 @@ def test_livesession_session_binding():
     key = b"A" * 32
     session1 = LiveSession(key, session_id=b"session1")
     session2 = LiveSession(key, session_id=b"session2")
-    
+
     frame = b"hello binding"
     enc = session1.encrypt_frame(frame)
-    
+
     with pytest.raises(ValueError, match="Decryption failed"):
         session2.decrypt_frame(enc)
 

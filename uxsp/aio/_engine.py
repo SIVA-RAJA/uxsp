@@ -7,10 +7,10 @@ from typing import Any
 from uxsp.core.chunking import create_chunked_transfer, reassemble_chunked_transfer
 from uxsp.core.envelope import Envelope
 from uxsp.core.identity import Identity, PublicCard
-from uxsp.crypto.symmetric import encrypt, decrypt
+from uxsp.crypto.symmetric import decrypt, encrypt
+from uxsp.secure._context import _GLOBAL_CONTEXT
 from uxsp.secure._errors import SecureReceiveError, TypeMismatchError
 from uxsp.secure._package import SecurePackage
-from uxsp.secure._context import _GLOBAL_CONTEXT
 from uxsp.secure._utils import _normalize_id, _safe_is_file
 from uxsp.storage.keystore import AsyncKeyStore
 
@@ -158,13 +158,13 @@ async def async_secure_receive_payload(
     # If ReplayGuard is updated to use AsyncNonceStore, we'd await it here, but open_from does that internally
     # Wait, open_from is synchronous! So it cannot await an AsyncNonceStore.
     # So if we have an AsyncNonceStore, we need to check replay asynchronously here or in open_from
-    
+
     # We will let open_from use a sync replay guard for now, or bypass it and check here.
     if not package.is_chunked:
         if package.envelope is None:
             raise SecureReceiveError("Package is marked non-chunked but missing envelope.")
         env = Envelope.from_dict(package.envelope)
-        
+
         # Async Replay Check
         from uxsp.storage.noncestore import AsyncNonceStore
         if isinstance(guard._store, AsyncNonceStore):
@@ -178,20 +178,20 @@ async def async_secure_receive_payload(
                 clock_skew = guard.clock_skew
                 def precheck(self, e): pass
                 def commit(self, e): pass
-            
+
             payload_bytes = receiver_obj.open_from(env, peer_card, replay_guard=DummyReplayGuard())
         else:
             payload_bytes = receiver_obj.open_from(env, peer_card, replay_guard=guard)
-            
+
         return payload_bytes
     else:
         if not package.chunks:
             raise SecureReceiveError("Package is marked chunked but contains no chunks.")
         if package.envelope is None:
             raise SecureReceiveError("Package is marked chunked but missing session key envelope.")
-            
+
         env = Envelope.from_dict(package.envelope)
-        
+
         # Async Replay Check
         from uxsp.storage.noncestore import AsyncNonceStore
         if isinstance(guard._store, AsyncNonceStore):
@@ -199,16 +199,16 @@ async def async_secure_receive_payload(
                 from uxsp.core.envelope import EnvelopeExpiredError
                 raise EnvelopeExpiredError("Replay detected (async).")
             await guard._store.mark_used(env.envelope_nonce)
-            class DummyReplayGuard:
+            class DummyReplayGuardChunked:
                 window_seconds = guard.window_seconds
                 clock_skew = guard.clock_skew
                 def precheck(self, e): pass
                 def commit(self, e): pass
-                
-            session_key = receiver_obj.open_from(env, peer_card, replay_guard=DummyReplayGuard())
+
+            session_key = receiver_obj.open_from(env, peer_card, replay_guard=DummyReplayGuardChunked())
         else:
             session_key = receiver_obj.open_from(env, peer_card, replay_guard=guard)
-        
+
         raw_chunks: list[bytes] = []
         for seq, c_dict in enumerate(package.chunks):
             ad = f"{env.envelope_nonce}:{seq}".encode()

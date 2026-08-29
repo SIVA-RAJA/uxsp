@@ -290,7 +290,7 @@ async def test_async_live_session(alice_identity, bob_identity):
         receiver=bob_identity
     )
     assert receiver_session is not None
-    
+
     # Verify the sessions matched keys
     assert sender_session.key == receiver_session.key
 

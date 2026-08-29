@@ -267,12 +267,12 @@ def test_flask_streaming_response(server_identity, client_identity):
         headers={"X-UXSP-Package": "1"}
     )
     assert response.status_code == 200
-    
+
     # Process stream
     lines = response.get_data().split(b"\n")
     valid_chunks = [L for L in lines if L.strip()]
     assert len(valid_chunks) == 2
-    
+
     import json
     chunk_pkg = uxsp.secure.SecurePackage.from_dict(json.loads(valid_chunks[0].decode("utf-8")))
     dec = uxsp.secure.Receive(sender=server_identity.public_card(), package=chunk_pkg, receiver=client_identity)

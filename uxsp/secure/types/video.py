@@ -1,11 +1,13 @@
 from __future__ import annotations
-from typing import Any
+
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 
 from uxsp.core.identity import Identity, PublicCard
 from uxsp.secure._package import SecurePackage
-from uxsp.secure._types import _send_file_type, _receive_file_type
+from uxsp.secure._types import _receive_file_type, _send_file_type
+
 
 def SendVideo(
     receiver_id: str | int | PublicCard | Identity | None = None,

@@ -6,16 +6,13 @@ from typing import Any
 
 from uxsp.core.chunking import create_chunked_transfer, reassemble_chunked_transfer
 from uxsp.core.envelope import Envelope
-from uxsp.core.envelope import Envelope
 from uxsp.core.identity import Identity, PublicCard
-from uxsp.crypto.symmetric import encrypt, decrypt
+from uxsp.crypto.symmetric import decrypt, encrypt
+from uxsp.secure._context import _GLOBAL_CONTEXT
 from uxsp.secure._errors import SecureReceiveError, TypeMismatchError
 from uxsp.secure._package import SecurePackage
-from uxsp.secure._context import _GLOBAL_CONTEXT
 from uxsp.secure._utils import _normalize_id, _safe_is_file
-from uxsp.core.identity import Identity, PublicCard
-from uxsp.crypto.symmetric import encrypt, decrypt
-from uxsp.secure._errors import SecureReceiveError, TypeMismatchError
+
 
 def _resolve_package_input(package_input: Any) -> SecurePackage:
     """Resolve a SecurePackage from diverse inputs (SecurePackage, dict, str, Path, bytes)."""
@@ -170,10 +167,10 @@ def _secure_receive_payload(
             raise SecureReceiveError("Package is marked chunked but contains no chunks.")
         if package.envelope is None:
             raise SecureReceiveError("Package is marked chunked but missing session key envelope.")
-            
+
         env = Envelope.from_dict(package.envelope)
         session_key = receiver_obj.open_from(env, peer_card, replay_guard=guard)
-        
+
         raw_chunks: list[bytes] = []
         for seq, c_dict in enumerate(package.chunks):
             ad = f"{env.envelope_nonce}:{seq}".encode()

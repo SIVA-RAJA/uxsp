@@ -1,16 +1,21 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
 from uxsp.core.identity import Identity, PublicCard
-from uxsp.core.payload import UXSPPayload, pack_file, pack_binary
+from uxsp.core.payload import UXSPPayload, pack_binary, pack_file
+from uxsp.secure._engine import (  # type: ignore[attr-defined]
+    _resolve_download_target,
+    _safe_is_file,
+    _secure_receive_payload,
+    _secure_send_payload,
+)
 from uxsp.secure._errors import SecureSendError
-from uxsp.secure._engine import _secure_send_payload, _secure_receive_payload, _resolve_download_target, _safe_is_file
 from uxsp.secure._package import SecurePackage
 from uxsp.secure._stream import SendStream
+
 
 def SendVoice(
     receiver_id: str | int | PublicCard | Identity | None = None,
@@ -33,7 +38,7 @@ def SendVoice(
             raise SecureSendError(f"File not found: {voice_path_or_bytes}")
         p = Path(voice_path_or_bytes)
         if p.stat().st_size > 64 * 1024 * 1024:
-            return SendStream(
+            return SendStream(  # type: ignore[return-value]
                 receiver_id=receiver_id,
                 stream_or_path=p,
                 receiver=receiver,

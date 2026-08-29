@@ -8,6 +8,7 @@ from typing import Any
 from uxsp.secure._errors import SecureReceiveError
 from uxsp.secure._utils import _safe_is_file
 
+
 @dataclass
 class SecurePackage:
     """

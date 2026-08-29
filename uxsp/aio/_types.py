@@ -6,12 +6,14 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
+from uxsp.aio._engine import async_secure_receive_payload, async_secure_send_payload
 from uxsp.core.identity import Identity, PublicCard
 from uxsp.core.payload import UXSPPayload, pack_binary, pack_file
+from uxsp.secure._engine import _resolve_download_target
 from uxsp.secure._errors import SecureSendError
 from uxsp.secure._package import SecurePackage
-from uxsp.secure._engine import _resolve_download_target, _safe_is_file
-from uxsp.aio._engine import async_secure_send_payload, async_secure_receive_payload
+from uxsp.secure._utils import _safe_is_file
+
 
 async def async_send_file_type(
     receiver_id: str | int | PublicCard | Identity | None = None,
@@ -34,7 +36,7 @@ async def async_send_file_type(
         if p.stat().st_size > 64 * 1024 * 1024:
             from uxsp.secure._stream import SendStream
             # Stream is already somewhat async or can be run in thread
-            return SendStream(
+            return SendStream(  # type: ignore[return-value]
                 receiver_id=receiver_id,
                 stream_or_path=p,
                 receiver=receiver,

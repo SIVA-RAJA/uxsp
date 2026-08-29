@@ -201,7 +201,7 @@ def _verify_hello_signature(
     client_versions = hello.get("supported_versions")
     if not isinstance(client_versions, list) or not client_versions:
         raise HandshakeAuthError("HelloMessage missing or invalid 'supported_versions'.")
-    
+
     common = set(SUPPORTED_VERSIONS).intersection(client_versions)
     if not common:
         raise HandshakeAuthError(f"No common protocol version supported. Peer supports: {client_versions}")

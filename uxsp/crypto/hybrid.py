@@ -434,7 +434,7 @@ def hybrid_verify(
     classical_ok = verify(message, classical_sig_bytes, signing_pub)
     if not classical_ok:
         return False
-        
+
     if allow_classical_only:
         import logging
         logging.getLogger("uxsp.crypto").warning("PQC is not active for this envelope (classical-only mode).")

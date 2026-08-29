@@ -6,9 +6,10 @@ from typing import Any, cast
 
 from uxsp.core.identity import Identity, PublicCard
 from uxsp.core.payload import UXSPPayload
+from uxsp.secure._engine import _secure_receive_payload, _secure_send_payload
 from uxsp.secure._errors import SecureSendError
-from uxsp.secure._engine import _secure_send_payload, _secure_receive_payload
 from uxsp.secure._package import SecurePackage
+
 
 def SendLocation(
     receiver_id: str | int | PublicCard | Identity | None = None,

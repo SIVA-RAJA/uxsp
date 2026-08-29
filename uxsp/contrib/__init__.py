@@ -22,10 +22,10 @@ Security Context:
 
 from __future__ import annotations
 
-from typing import Any
 from uxsp.core.identity import PublicCard
-from uxsp.secure import _GLOBAL_CONTEXT
+from uxsp.secure._context import _GLOBAL_CONTEXT
 from uxsp.storage.keystore import KeyStore
+
 
 def resolve_peer_card(keystore: KeyStore | None, sender_id: str) -> PublicCard | None:
     """

@@ -2,7 +2,7 @@
 UXSP Live Streaming Module (`uxsp.core.live`)
 
 High-performance, zero-parsing symmetric encryption for live streaming (WebRTC video frames,
-DataChannels, or raw WebSockets). 
+DataChannels, or raw WebSockets).
 
 This module bypasses the standard JSON `SecurePackage` envelope format to provide millisecond
 latency suitable for 60 FPS video calls and real-time CCTV pipelines.
@@ -12,10 +12,11 @@ from __future__ import annotations
 
 import os
 import struct
+from typing import Any
 
-from uxsp.crypto.symmetric import KEY_SIZE, NONCE_SIZE, encrypt, decrypt
-from uxsp.crypto.kdf import derive_key
 from uxsp.core.replay import ReplayError
+from uxsp.crypto.kdf import derive_key
+from uxsp.crypto.symmetric import KEY_SIZE, NONCE_SIZE, decrypt, encrypt
 
 
 class LiveSession:
@@ -50,7 +51,7 @@ class LiveSession:
         """
         Encrypt a raw binary frame (e.g. video codec output).
         Optionally attaches unencrypted (but mathematically authenticated) metadata.
-        
+
         Format: [2-byte Metadata Length] [Metadata Bytes] [12-byte Nonce] [Ciphertext]
         """
         if len(metadata) > 65535:
@@ -58,15 +59,15 @@ class LiveSession:
 
         ad = self.session_id_bytes + metadata
         enc_dict = encrypt(bytes(frame), self.key, associated_data=ad)
-        
+
         # Combine length + metadata + nonce + ciphertext
         meta_len = struct.pack(">H", len(metadata))
         result = meta_len + metadata + enc_dict["nonce"] + enc_dict["ciphertext"]
-        
+
         self._frame_count += 1
         if self._frame_count >= 65536:
             self._ratchet_key()
-            
+
         return result
 
     def decrypt_frame(self, encrypted_frame: bytes | bytearray, expected_seq: int | None = None) -> tuple[bytes, bytes]:
@@ -76,34 +77,34 @@ class LiveSession:
         """
         if len(encrypted_frame) < 2:
             raise ValueError("Encrypted frame is too small to contain length header.")
-        
+
         meta_len = struct.unpack(">H", encrypted_frame[:2])[0]
-        
+
         if len(encrypted_frame) < 2 + meta_len + NONCE_SIZE:
             raise ValueError("Encrypted frame is too small to contain metadata and nonce.")
-        
+
         metadata = encrypted_frame[2 : 2 + meta_len]
         nonce = encrypted_frame[2 + meta_len : 2 + meta_len + NONCE_SIZE]
         ciphertext = encrypted_frame[2 + meta_len + NONCE_SIZE :]
-        
-        ad = self.session_id_bytes + metadata
-        decrypted = decrypt(ciphertext, nonce, self.key, associated_data=ad)
-        
+
+        ad = bytes(self.session_id_bytes) + bytes(metadata)
+        decrypted = decrypt(bytes(ciphertext), bytes(nonce), self.key, associated_data=ad)
+
         if expected_seq is not None:
             if expected_seq <= self._last_seq:
                 raise ReplayError("Frame replay detected")
             self._last_seq = expected_seq
-            
+
         self._frame_count += 1
         if self._frame_count >= 65536:
             self._ratchet_key()
-            
-        return decrypted, metadata
+
+        return decrypted, bytes(metadata)
 
     @classmethod
     def extract_metadata(cls, encrypted_frame: bytes | bytearray) -> bytes:
         """
-        Utility for routing servers (SFUs) to inspect the unencrypted metadata 
+        Utility for routing servers (SFUs) to inspect the unencrypted metadata
         attached to a frame without needing the decryption key.
         """
         if len(encrypted_frame) < 2:
@@ -111,7 +112,7 @@ class LiveSession:
         meta_len = struct.unpack(">H", encrypted_frame[:2])[0]
         if len(encrypted_frame) < 2 + meta_len:
             raise ValueError("Malformed frame: too short to contain full metadata.")
-        return encrypted_frame[2 : 2 + meta_len]
+        return bytes(encrypted_frame[2 : 2 + meta_len])
 
     def encrypt_voice_frame(
         self,
@@ -207,7 +208,7 @@ class LiveVoiceSession(LiveSession):
         self.sequence += 1
         return self.sequence
 
-    def encrypt_voice_frame(  # type: ignore[override]
+    def encrypt_voice_frame(
         self,
         frame: bytes | bytearray,
         *,

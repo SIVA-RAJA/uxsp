@@ -32,15 +32,15 @@ import logging
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from uxsp.core.identity import Identity, PublicCard
+from uxsp.contrib import resolve_peer_card
+from uxsp.core.identity import Identity
 from uxsp.secure import (
-    _GLOBAL_CONTEXT,
     Receive,
     SecurePackage,
     Send,
 )
+from uxsp.secure._context import _GLOBAL_CONTEXT
 from uxsp.storage.keystore import KeyStore
-from uxsp.contrib import resolve_peer_card
 
 try:
     from flask import Flask, Response, g, jsonify, request
@@ -114,8 +114,7 @@ class UXSPFlaskMiddleware:
         is_uxsp_request = False
         package: SecurePackage | None = None
 
-        if header_pkg or header_sender or "application/uxsp+json" in content_type:
-            if body_bytes and body_bytes.strip().startswith(b"{"):
+        if (header_pkg or header_sender or "application/uxsp+json" in content_type) and (body_bytes and body_bytes.strip().startswith(b"{")):
                 try:
                     data_dict = json.loads(body_bytes.decode("utf-8"))
                     if isinstance(data_dict, dict) and "sender_id" in data_dict and ("envelope" in data_dict or "chunks" in data_dict):
@@ -164,9 +163,10 @@ class UXSPFlaskMiddleware:
 
         if should_encrypt and sender_card is not None:
             if response.is_streamed:
-                def encrypt_stream():
+                def encrypt_stream():  # type: ignore[no-untyped-def]
                     for chunk in response.iter_encoded():
-                        if not chunk: continue
+                        if not chunk:
+                            continue
                         out_pkg = Send(
                             receiver=sender_card,
                             item=chunk,
@@ -174,10 +174,10 @@ class UXSPFlaskMiddleware:
                             data_type="binary"
                         )
                         yield out_pkg.to_json().encode("utf-8") + b"\n"
-                
+
                 from flask import Response as FlaskResponse
                 encrypted_response = FlaskResponse(
-                    encrypt_stream(),
+                    encrypt_stream(),  # type: ignore[no-untyped-call]
                     status=response.status_code,
                     content_type="application/x-ndjson"
                 )

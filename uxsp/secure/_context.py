@@ -8,10 +8,11 @@ from typing import Any
 from uxsp.core.identity import Identity, PublicCard
 from uxsp.core.nonce import MemoryNonceStore, NonceStore
 from uxsp.core.replay import ReplayGuard
-from uxsp.storage.keystore import KeyStore, MemoryKeyStore
 from uxsp.secure._errors import PeerNotFoundError
 from uxsp.secure._package import SecurePackage
 from uxsp.secure._utils import _normalize_id
+from uxsp.storage.keystore import KeyStore, MemoryKeyStore
+
 
 class SecureContext:
     """

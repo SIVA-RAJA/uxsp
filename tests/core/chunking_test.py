@@ -1079,28 +1079,28 @@ class TestCreateChunkedStreamTransfer:
         # Line 414 test: what if the file size changes while reading?
         p = tmp_path / "data.dat"
         p.write_bytes(b"x" * 100)
-        from uxsp.core.chunking import create_chunked_stream_transfer
-        
         # We can simulate this by intercepting open() to return a file object
         # that lies about its length (or mock stat to lie about length).
         import pathlib
+
+        from uxsp.core.chunking import create_chunked_stream_transfer
         original_stat = pathlib.Path.stat
-        
+
         class MockStat:
             st_size = 150 # claims to be 150 bytes, but file only has 100
-            
+
         def mock_stat(self):
             if self.name == "data.dat":
                 return MockStat()
             return original_stat(self)
-            
+
         monkeypatch.setattr(pathlib.Path, "stat", mock_stat)
-        
+
         # Total calculated chunks will be 150 / 30 = 5 chunks
         # But we only have 100 bytes (read will hit EOF early)
         # It should break out early!
         chunks = list(create_chunked_stream_transfer(str(p), chunk_size=30))
-        
+
         # It yielded chunks up to what it could read
         assert len(chunks) == 4
 

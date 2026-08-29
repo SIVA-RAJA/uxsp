@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Any
 from uxsp.core.identity import Identity, PublicCard
-from uxsp.secure._context import _GLOBAL_CONTEXT, get_peer, PeerNotFoundError
+from uxsp.secure._context import _GLOBAL_CONTEXT, get_peer
+from uxsp.secure._errors import PeerNotFoundError
+
 
 def create_identity(name: str, role: str = "CLIENT") -> Identity:
     """Create a brand-new Identity with a freshly generated hybrid keypair."""

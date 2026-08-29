@@ -19,7 +19,7 @@ Key classes:
     RedisSlidingRateLimiter — Sliding-window Redis limiter using sorted sets (production).
     GuardedHandshake      — Combines rate limiting with Handshake.respond().
     RateLimitExceededError — Raised when a key exceeds its request quota.
-    
+
     AsyncRateLimiterBase  — Abstract base class for async limiters.
     AsyncRedisRateLimiter — Native async fixed-window limiter.
     AsyncRedisSlidingRateLimiter — Native async sliding-window limiter.
@@ -634,7 +634,7 @@ class AsyncGuardedHandshake:
     def __init__(self, limiter: AsyncRateLimiterBase, responder: Identity, nonce_store: AsyncNonceStore | None = None) -> None:
         self._limiter = limiter
         self._responder = responder
-        # If no async nonce store is provided, one could use a mock or in-memory one, 
+        # If no async nonce store is provided, one could use a mock or in-memory one,
         # but for simplicity we assume it's provided if needed.
         self._nonce_store = nonce_store
 
@@ -642,15 +642,15 @@ class AsyncGuardedHandshake:
         self, hello: dict[str, Any], initiator_card: PublicCard, config: SessionConfig | None = None
     ) -> Handshake:
         await self._limiter.check(initiator_card.entity_id)
-        
+
         # We need an async handshake response if the nonce store is async.
         # However, Handshake.respond is currently synchronous and expects a sync NonceStore.
         # We can implement a static method or logic here to do it asynchronously.
-        
+
         # Verify HELLO format (from Handshake.respond)
         if not isinstance(hello, dict) or hello.get("v") != 1:
             raise ValueError("Invalid HELLO format or version.")
-            
+
         nonce = hello.get("n")
         if not isinstance(nonce, str):
             raise ValueError("Invalid or missing initiator nonce.")
@@ -659,11 +659,11 @@ class AsyncGuardedHandshake:
             if await self._nonce_store.is_seen(nonce):
                 raise ValueError("Replay detected: nonce already seen.")
             await self._nonce_store.mark_used(nonce)
-            
+
         return Handshake.respond(
             responder=self._responder,
             hello=hello,
             initiator_card=initiator_card,
-            nonce_store=None,  # We just checked it
+            nonce_store=None,  # type: ignore
             config=config,
         )

@@ -3,8 +3,13 @@ from __future__ import annotations
 from typing import Any
 
 from uxsp.core.identity import Identity, PublicCard
+from uxsp.secure._engine import (
+    _resolve_package_input,
+    _secure_receive_payload,
+    _secure_send_payload,
+)
 from uxsp.secure._package import SecurePackage
-from uxsp.secure._engine import _secure_send_payload, _secure_receive_payload, _resolve_package_input
+
 
 def SendLiveSession(
     receiver_id: str | int | PublicCard | Identity | None = None,
@@ -13,7 +18,7 @@ def SendLiveSession(
     sender: Identity | None = None,
     sender_identity: Identity | None = None,
     metadata: dict[str, Any] | None = None,
-) -> tuple[SecurePackage, __import__("uxsp.core.live", fromlist=["LiveSession"]).LiveSession]:
+) -> tuple[SecurePackage, __import__("uxsp.core.live", fromlist=["LiveSession"]).LiveSession]:  # type: ignore[valid-type]
     """
     Negotiate a high-performance AES-GCM LiveSession for WebRTC video or socket streams.
     Returns a tuple: (The encrypted SecurePackage to send, The local LiveSession).
@@ -46,7 +51,7 @@ def ReceiveLiveSession(
     sender_card: PublicCard | Identity | None = None,
     receiver: Identity | None = None,
     receiver_identity: Identity | None = None,
-) -> __import__("uxsp.core.live", fromlist=["LiveSession"]).LiveSession:
+) -> __import__("uxsp.core.live", fromlist=["LiveSession"]).LiveSession:  # type: ignore[valid-type]
     """
     Accept a high-performance AES-GCM LiveSession from a peer.
     Returns the decrypted, ready-to-use LiveSession.
@@ -79,7 +84,7 @@ def SendLiveVoiceCall(
     sample_rate: int = 48000,
     channels: int = 1,
     metadata: dict[str, Any] | None = None,
-) -> tuple[SecurePackage, __import__("uxsp.core.live", fromlist=["LiveVoiceSession"]).LiveVoiceSession]:
+) -> tuple[SecurePackage, __import__("uxsp.core.live", fromlist=["LiveVoiceSession"]).LiveVoiceSession]:  # type: ignore[valid-type]
     """
     Negotiate a high-performance AES-GCM LiveVoiceSession for live voice calling / audio streaming.
     Returns a tuple: (The encrypted SecurePackage to send, The local LiveVoiceSession).
@@ -115,7 +120,7 @@ def ReceiveLiveVoiceCall(
     sender_card: PublicCard | Identity | None = None,
     receiver: Identity | None = None,
     receiver_identity: Identity | None = None,
-) -> __import__("uxsp.core.live", fromlist=["LiveVoiceSession"]).LiveVoiceSession:
+) -> __import__("uxsp.core.live", fromlist=["LiveVoiceSession"]).LiveVoiceSession:  # type: ignore[valid-type]
     """
     Accept a high-performance AES-GCM LiveVoiceSession from a peer for live voice calling.
     Returns the decrypted, ready-to-use LiveVoiceSession.

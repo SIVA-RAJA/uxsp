@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import mimetypes
 from collections.abc import Generator
 from pathlib import Path
@@ -8,9 +7,15 @@ from typing import Any
 
 from uxsp.core.identity import Identity, PublicCard
 from uxsp.core.payload import UXSPPayload, pack_binary, pack_file
-from uxsp.secure._engine import _resolve_download_target, _secure_receive_payload, _secure_send_payload, _safe_is_file
+from uxsp.secure._engine import (  # type: ignore[attr-defined]
+    _resolve_download_target,
+    _safe_is_file,
+    _secure_receive_payload,
+    _secure_send_payload,
+)
 from uxsp.secure._errors import SecureSendError
 from uxsp.secure._package import SecurePackage
+
 
 def _send_file_type(
     receiver_id: str | int | PublicCard | Identity | None,
@@ -32,7 +37,7 @@ def _send_file_type(
         p = Path(file_path_or_bytes)
         if p.stat().st_size > 64 * 1024 * 1024:
             from uxsp.secure._stream import SendStream
-            return SendStream(
+            return SendStream(  # type: ignore[return-value]
                 receiver_id=receiver_id,
                 stream_or_path=p,
                 receiver=receiver,

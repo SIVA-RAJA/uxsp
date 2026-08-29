@@ -19,6 +19,7 @@ def keygen(args: argparse.Namespace) -> None:
 
 def pubcard(args: argparse.Namespace) -> None:
     import tempfile as _tempfile
+
     from uxsp import Identity
 
     password = prompt_password("Password: ")
@@ -63,10 +64,10 @@ def rotate(args: argparse.Namespace) -> None:
     password = prompt_password("Password: ")
     identity = Identity.load(args.key, password)
     identity.rotate_keys()
-    
+
     new_password = prompt_password("Enter new password (or same) to encrypt key: ", confirm=True)
     identity.save(args.key, new_password)
-    
+
     print(f"Keys rotated for Entity ID: {identity.entity_id}")
     print(f"Saved to: {args.key}")
 
@@ -76,9 +77,9 @@ def revoke(args: argparse.Namespace) -> None:
 
     password = prompt_password("Password: ")
     identity = Identity.load(args.key, password)
-    identity.revoke(reason=args.reason)
+    identity.revoke(reason=args.reason)  # type: ignore[attr-defined]
     identity.save(args.key, password)
-    
+
     print(f"Identity revoked: {identity.entity_id}")
     print(f"Reason: {args.reason}")
     print(f"Saved to: {args.key}")

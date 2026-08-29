@@ -7,11 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.0] - 2026-08-29
+
+### Milestone: Comprehensive Developer Documentation & UX Overhaul
+
+UXSP 1.2.0 is a massive documentation and developer experience release. Based on user feedback, the entire documentation suite has been rewritten to be perfectly clear, beginner-friendly, and comprehensive without requiring deep cryptographic domain knowledge.
+
+### Added
+- **Comprehensive Documentation Suite (`docs/`)**:
+  - Rewritten `index.md` for clear navigation.
+  - New `high_level_api.md` covering all 14 `Send*`/`Receive*` polymorphic types, Identity creation, Async (`aio`) usage, key rotation, and multi-gigabyte streaming.
+  - New `streaming_and_media.md` detailing WebRTC, live video calls, voice calls, and CCTV integration.
+  - New `noncestore.md` explaining Replay Attacks and all NonceStore types (including Async).
+  - New `cli.md` covering development and production CLI workflows.
+  - New `web_frontend.md` explaining the `@siva_raja/uxsp` NPM package and frontend protection.
+- **Middleware Deep Dives (`docs/frameworks/`)**:
+  - Rewritten guides for Django, FastAPI, and Flask.
+  - Detailed explanations of middleware ordering (e.g., placing UXSP before CSRF in Django).
+  - Clear distinctions between opportunistic middleware encryption vs. strict enforcement using decorators (`@protect`, `@protect_route`).
+
+### Changed
+- **README.md Overhaul**: Completely rewritten to focus on features, quick installation reference (combinations for frameworks and storage), and system prerequisites.
+- **Version Bump**: Upgraded package version to `1.2.0`.
+
 ## [1.1.0] - 2026-08-26
 
 ### Milestone: Enterprise Web Framework Integrations, Native Async Engine & Web Interoperability
 
-UXSP 1.1.0 is a major feature release delivering seamless 1-line web framework integrations (FastAPI, Django, Flask), high-throughput asynchronous execution (`uxsp.aio`), memory-efficient multi-gigabyte file streaming, enterprise key lifecycle management (rotation, expiration, revocation), Draft-07 JSON Schema wire specifications, a browser TypeScript SDK (`uxsp-js`), and a WASM/Pyodide browser bridge—all supported by verified **100% test coverage** across 4,617 executable statements.
+UXSP 1.1.0 is a major feature release delivering seamless 1-line web framework integrations (FastAPI, Django, Flask), high-throughput asynchronous execution (`uxsp.aio`), memory-efficient multi-gigabyte file streaming, enterprise key lifecycle management (rotation, expiration, revocation), Draft-07 JSON Schema wire specifications, a browser TypeScript SDK (`uxsp`), and a WASM/Pyodide browser bridge—all supported by verified **100% test coverage** across 4,617 executable statements.
 
 ### Added
 
@@ -32,7 +55,7 @@ UXSP 1.1.0 is a major feature release delivering seamless 1-line web framework i
   - Public card revocation tracking (`revoke(reason)`) throwing `CardRevokedError` and `CardExpiredError` on decryption attempts.
 - **Web / Frontend Interoperability (`uxsp.schema`, `sdks/js/`, `uxsp.wasm`)**:
   - Draft-07 JSON Schema specifications (`envelope_schema.json`, `package_schema.json`, `public_card_schema.json`) and `uxsp.schema` runtime validator functions.
-  - Standalone TypeScript/JavaScript SDK (`uxsp-js` v1.1.0) providing `UXSPClient`, full TypeScript interfaces, and native schema validation for browser applications.
+  - Standalone TypeScript/JavaScript SDK (`uxsp` v1.1.0) providing `UXSPClient`, full TypeScript interfaces, and native schema validation for browser applications.
   - Pyodide / WebAssembly compatibility layer (`uxsp.wasm` & `uxsp.pyodide`) enabling UXSP cryptographic execution inside browser Web Workers and Pyodide runtimes.
 
 ### Changed

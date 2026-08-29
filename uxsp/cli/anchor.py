@@ -18,7 +18,7 @@ def anchor_create(args: argparse.Namespace) -> None:
     pub = anchor.public_anchor()
     pub_path = str(Path(args.out).parent / (Path(args.out).stem + ".pub.json"))
     Path(pub_path).parent.mkdir(parents=True, exist_ok=True)
-    
+
     dir_ = str(Path(pub_path).parent)
     tmp_fd, tmp_path = tempfile.mkstemp(dir=dir_)
     try:
@@ -47,7 +47,7 @@ def anchor_issue(args: argparse.Namespace) -> None:
 
     signed = anchor.issue(card, validity_days=args.days)
     out = args.out or str(Path(args.card).parent / (Path(args.card).stem + ".signed.json"))
-    
+
     import tempfile as _tempfile
 
     out_path = Path(out)

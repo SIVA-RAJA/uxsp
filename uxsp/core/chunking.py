@@ -26,8 +26,9 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from collections.abc import Sequence
+from collections.abc import Generator, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal, Self, cast, get_args
 
 # ---------------------------------------------------------------------------
@@ -352,21 +353,21 @@ def create_chunked_transfer(
 
 
 def create_chunked_stream_transfer(
-    file_path: str | __import__("pathlib").Path,
+    file_path: str | Path,
     *,
     chunk_size: int = 32 * 1024,
     kind: ChunkKind = "binary",
     filename: str | None = None,
     content_type: str = "application/octet-stream",
     encoding: str | None = None,
-) -> __import__("typing").Generator[bytes, None, None]:
+) -> Generator[bytes, None, None]:
     """
     Stream a file from disk, yielding serialised chunk payloads ready for encryption.
     Reads the file twice: once to compute the total SHA-256 hash and chunk count,
     and a second time to yield the chunks progressively to save memory.
     """
     from pathlib import Path
-    
+
     if chunk_size <= 0:
         raise ChunkValidationError("chunk_size must be positive.")
 
@@ -375,10 +376,7 @@ def create_chunked_stream_transfer(
         raise ChunkValidationError(f"File not found: {file_path}")
 
     file_size = p.stat().st_size
-    if file_size == 0:
-        total = 1
-    else:
-        total = (file_size + chunk_size - 1) // chunk_size
+    total = 1 if file_size == 0 else (file_size + chunk_size - 1) // chunk_size
 
     # Pass 1: Compute full file hash
     h = hashlib.sha256()
@@ -386,7 +384,7 @@ def create_chunked_stream_transfer(
         while chunk_bytes := f.read(chunk_size):
             h.update(chunk_bytes)
     file_hash = h.hexdigest()
-    
+
     transfer_id = uuid.uuid4().hex
 
     # Pass 2: Yield chunks

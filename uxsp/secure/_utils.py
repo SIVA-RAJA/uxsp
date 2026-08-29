@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+
 from uxsp.core.identity import Identity, PublicCard
+
 
 def _normalize_id(entity_id: str | int | PublicCard | Identity) -> str:
     """Ensure entity ID is a non-empty string."""

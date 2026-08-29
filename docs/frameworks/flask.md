@@ -1,61 +1,71 @@
-# Protecting Flask Applications (`uxsp.contrib.flask`)
+# Flask Middleware & Protection Guide
 
-The `uxsp.contrib.flask` module brings request decryption and response encryption to Flask web services.
-
----
-
-## 1. Installation
-
-Install UXSP with Flask support:
-```bash
-pip install uxsp[flask]
-```
+UXSP provides a WSGI middleware for Flask that transparently decrypts incoming requests and encrypts outbound responses.
 
 ---
 
-## 2. Using `UXSPFlaskMiddleware`
+## 1. Setting up the Middleware
 
-Wrap your Flask application object with `UXSPFlaskMiddleware`:
+In Flask, you wrap your WSGI application with `UXSPFlaskMiddleware`.
+
+### Middleware Ordering (CRITICAL)
+
+If you are using other WSGI middlewares (like Werkzeug ProxyFix), you should wrap the Flask app with UXSP *after* those, so UXSP sits closest to your application logic.
 
 ```python
-from flask import Flask, g, jsonify
-import uxsp
+from flask import Flask
 from uxsp.contrib.flask import UXSPFlaskMiddleware
 
-server_identity = uxsp.create_identity("Flask Server", role="SERVER")
-
 app = Flask(__name__)
-uxsp_mw = UXSPFlaskMiddleware(app, identity=server_identity, require_encryption=True)
 
-@app.route("/api/endpoint", methods=["POST"])
-def endpoint():
-    # Access decrypted payload attached to Flask g object
-    payload = g.uxsp_payload
-    sender_id = g.uxsp_sender_id
-    
-    return jsonify({"status": "received", "data": payload})
-
-if __name__ == "__main__":
-    app.run(port=5000)
+# Wrap the WSGI app
+app.wsgi_app = UXSPFlaskMiddleware(
+    app.wsgi_app,
+    require_encryption=False,
+    exclude_paths=["/static/"]
+)
 ```
 
 ---
 
-## 3. Protecting Routes with `@protect_flask` Decorator
+## 2. What happens if I only use the Middleware?
 
-Protect individual Flask routes using the `@protect_flask` decorator:
+If you just wrap the `wsgi_app`:
+1. **Encrypted Requests**: The middleware intercepts the raw WSGI stream, decrypts it, and passes the plain data to Flask. Flask behaves as if it received standard JSON.
+2. **Plain Text Requests**: Pass through to Flask unmodified.
+3. **Responses**: The middleware will catch Flask's response and encrypt it *only* if the incoming request was a valid UXSP package.
+
+---
+
+## 3. The `@protect_route` Decorator
+
+To strictly enforce encryption on a specific Flask route, use the `@protect_route` (or `@protect_flask`) decorator.
+
+### Why do programmers need to use decorators?
+Without the decorator, a route can still be accessed via plain text (unless you set `require_encryption=True` globally, which breaks static files or health checks). 
+
+The `@protect_route` decorator checks if the current Flask environment was flagged by the UXSP middleware. If it wasn't, it aborts the request before your code runs.
+
+### How and Where to Use It
+Place it right below your `@app.route` decorator!
 
 ```python
-from flask import Flask, jsonify
-import uxsp
-from uxsp.contrib.flask import protect_flask
+from flask import Flask, request, jsonify
+from uxsp.contrib.flask import protect_route, UXSPFlaskMiddleware
 
 app = Flask(__name__)
-server_identity = uxsp.create_identity("Flask Server", role="SERVER")
+app.wsgi_app = UXSPFlaskMiddleware(app.wsgi_app)
 
-@app.route("/api/protected", methods=["POST"])
-@protect_flask(server_identity=server_identity)
-def protected_route():
-    payload = g.uxsp_payload
-    return jsonify({"result": "Success", "payload": payload})
+@app.route("/secure_data", methods=["POST"])
+@protect_route()  # Enforce UXSP here!
+def secure_endpoint():
+    # Because of @protect_route, we know request.json is safe!
+    # (The middleware replaced the encrypted body with the decrypted JSON)
+    data = request.json
+    
+    # Process data...
+    
+    # Return a normal Flask JSON response. The middleware will intercept
+    # this and encrypt it for the client.
+    return jsonify({"status": "success", "received": data})
 ```

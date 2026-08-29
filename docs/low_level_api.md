@@ -1,136 +1,87 @@
-# Low-Level Cryptographic APIs
+# Low-Level APIs (Core Concepts)
 
-While `uxsp.secure` and `uxsp.aio` provide automated 1-line APIs, UXSP exposes all of its low-level cryptographic building blocks for advanced developers who need explicit control over encryption, sessions, Nonce storage, and chunking.
+While the High-Level APIs (`uxsp.secure`) are all you need for 99% of applications, sometimes you need to get under the hood. This guide explains the core components of UXSP, how they work together, and how you can manually configure them if you need absolute control.
 
 ---
 
-## 1. Raw Hybrid Cryptography (`uxsp.crypto.hybrid`)
+## 1. How UXSP Actually Works (The Assembly Line)
 
-UXSP combines classical cryptography (AES-256-GCM + X25519) and NIST Post-Quantum Cryptography (ML-KEM-768 FIPS 203) using the `Hybrid` suite. 
+When you call `SendText()`, a lot happens behind the scenes. Here is the assembly line:
 
-You can manually generate underlying keys, seal data, and open data without using `Identity` or `SecurePackage`.
+1.  **Identity Verification**: UXSP checks your private keys and the recipient's public keys.
+2.  **Handshake / Key Exchange**: UXSP generates a completely random, one-time session key. It encrypts this session key using **ML-KEM (Post-Quantum)** and **X25519 (Classical)** public keys of the receiver. This is the "Hybrid" part.
+3.  **Data Serialization**: It converts your text (or JSON, or file) into raw bytes.
+4.  **AES-GCM Encryption**: It encrypts those bytes using the one-time session key and AES-256-GCM.
+5.  **Signing**: It signs the entire package using **ML-DSA (Post-Quantum)** and **Ed25519 (Classical)** so the receiver knows nobody tampered with it.
+6.  **Packaging**: It bundles the encrypted data, the encrypted session key, and the signatures into a `SecurePackage`.
 
-### Generating Hybrid Keys
+When you use the Low-Level APIs, you can manually intervene at any of these steps!
+
+---
+
+## 2. Manual Configuration (`uxsp.core` and `uxsp.crypto`)
+
+If you don't want to use the automatic `SecureContext`, you can manually instantiate and connect the core cryptography modules.
+
+### The Cryptography Engine (`uxsp.crypto`)
+The `uxsp.crypto` module contains the raw algorithms. You can use this to encrypt data manually if you don't want to use the `SecurePackage` format.
+
 ```python
-from uxsp.crypto.hybrid import generate_hybrid_keypair
+from uxsp.crypto import AESGCMEncryption
 
-# Generate a raw hybrid keypair (contains both classical and PQC private/public bytes)
-keypair = generate_hybrid_keypair()
-public_key_bytes = keypair.public_key_bytes
-private_key_bytes = keypair.private_key_bytes
+# Manually create a 32-byte AES key
+my_secret_key = b"A" * 32 
+
+# Encrypt data manually
+encryptor = AESGCMEncryption(my_secret_key)
+ciphertext, nonce = encryptor.encrypt(b"Top secret data")
+
+# Decrypt data manually
+plaintext = encryptor.decrypt(ciphertext, nonce)
 ```
 
-### Sealing and Opening Raw Bytes
+### The KeyStore (`uxsp.storage.keystore`)
+In the high-level API, UXSP stores peer identities in memory by default. In a real production app, you might want to store them in a database. You can manually connect a `KeyStore`.
+
 ```python
-from uxsp.crypto.hybrid import hybrid_seal, hybrid_open
+from uxsp.storage.keystore import RedisKeyStore
+import redis
 
-secret_data = b"Highly classified raw data"
+# Connect to Redis
+redis_client = redis.Redis(host='localhost', port=6379)
 
-# Seal the data for the recipient's public key
-ciphertext, shared_secret_sender = hybrid_seal(public_key_bytes, secret_data)
+# Create a manual KeyStore
+my_keystore = RedisKeyStore(redis_client)
 
-# Open the ciphertext using the recipient's private key
-plaintext, shared_secret_receiver = hybrid_open(
-    private_key_bytes, 
-    public_key_bytes, 
-    ciphertext
+# Put a card into the store
+my_keystore.put(recipient_public_card)
+
+# Later, you can fetch it manually!
+card = my_keystore.get("recipient_id_123")
+```
+
+---
+
+## 3. Integrating Low-Level and High-Level APIs
+
+You can easily plug your low-level components (like the `RedisKeyStore`) into the high-level `SecureContext` so that `Send` and `Receive` automatically use your custom database!
+
+```python
+from uxsp.secure import configure, SendText
+from uxsp.storage.keystore import RedisKeyStore
+import redis
+
+# 1. Setup low-level components
+r = redis.Redis(host='localhost')
+custom_keystore = RedisKeyStore(r)
+
+# 2. Tell the high-level API to use it!
+configure(
+    keystore=custom_keystore,
 )
 
-assert plaintext == secret_data
-assert shared_secret_sender == shared_secret_receiver
+# 3. Now, SendText will automatically look up keys in Redis!
+SendText("Hello", receiver_id="friend_id_from_redis")
 ```
 
----
-
-## 2. Envelopes (`uxsp.core.envelope`)
-
-An Envelope wraps encrypted ciphertext alongside its cryptographic configuration headers (like cipher suites and KDF algorithms). 
-
-```python
-from uxsp.core.envelope import Envelope
-
-# Create a sealed envelope
-envelope = Envelope.seal(
-    receiver_pub_key=public_key_bytes,
-    payload=b"Envelope payload"
-)
-
-# Export Envelope to JSON
-envelope_json = envelope.to_json()
-
-# Open the Envelope
-restored_envelope = Envelope.from_json(envelope_json)
-decrypted_payload = restored_envelope.open(private_key_bytes)
-```
-
----
-
-## 3. Mutual Handshakes & Sessions (`uxsp.core.session`)
-
-Instead of sealing every message individually (which is slow due to PQC key encapsulation overhead), you can establish a `Session` with a peer to derive a fast, shared symmetric key.
-
-### Mutual Handshake
-```python
-from uxsp.core.handshake import Handshake
-
-# Alice creates a handshake offer
-offer = Handshake.create_offer(sender_keypair=alice_keypair, receiver_pub=bob_pub)
-
-# Bob receives offer, verifies it, and creates an answer
-answer, bob_session = Handshake.accept_offer(offer, receiver_keypair=bob_keypair, sender_pub=alice_pub)
-
-# Alice receives the answer and finalizes her session
-alice_session = Handshake.finalize_offer(answer, sender_keypair=alice_keypair, receiver_pub=bob_pub)
-```
-
-### Session Encryption
-Once `alice_session` and `bob_session` are established, you can use AES-GCM directly for blazing-fast encryption.
-
-```python
-# Alice encrypts a message
-ciphertext = alice_session.encrypt(b"Hello over established session")
-
-# Bob decrypts the message
-plaintext = bob_session.decrypt(ciphertext)
-```
-
----
-
-## 4. Replay Protection & Nonce Stores (`uxsp.core.nonce`)
-
-If an attacker intercepts an encrypted package, they might try to send it again later ("Replay Attack"). UXSP prevents this by tracking single-use random identifiers (Nonces).
-
-You can control where these Nonces are stored (Memory, Redis, or Postgres).
-
-```python
-from uxsp.storage.noncestore import RedisNonceStore, PostgresNonceStore
-
-# Store nonces in Redis for high-speed microservices
-redis_store = RedisNonceStore(redis_client=redis_client)
-
-# Or store in Postgres for durable audit trails
-pg_store = PostgresNonceStore(dsn="postgresql://user:pass@localhost/db")
-
-# Mark a nonce as seen
-is_new = redis_store.mark_used("nonce-abc-123", ttl=3600)
-if not is_new:
-    print("Replay Attack Detected!")
-```
-
----
-
-## 5. File Chunking (`uxsp.core.chunking`)
-
-If you want to manually chunk files without using `SendStream`, you can use the `FileChunker`.
-
-```python
-from uxsp.core.chunking import FileChunker
-
-chunker = FileChunker(file_path="video.mp4", chunk_size=1024 * 1024)
-
-# Iterate over raw bytes of chunks
-for chunk_bytes in chunker.read_chunks():
-    # Encrypt raw bytes manually
-    ciphertext = my_session.encrypt(chunk_bytes)
-    send_to_socket(ciphertext)
-```
+This is the true power of UXSP: It gives you the beautiful, easy-to-use 1-line APIs, while allowing you to swap out the complex internal engines (like databases and cache) effortlessly!

@@ -1,71 +1,91 @@
-# Protecting Django Applications (`uxsp.contrib.django`)
+# Django Middleware & Protection Guide
 
-The `uxsp.contrib.django` module enables 1-line post-quantum encryption for Django views and API backends.
-
----
-
-## 1. Installation
-
-Install UXSP with Django support:
-```bash
-pip install uxsp[django]
-```
+UXSP provides a 1-line middleware for Django that automatically handles request decryption and response encryption. It seamlessly integrates with Django's request lifecycle.
 
 ---
 
-## 2. Using `UXSPDjangoMiddleware`
+## 1. Setting up the Middleware
 
-Add `UXSPDjangoMiddleware` to your `MIDDLEWARE` setting in `settings.py`:
+To use UXSP in Django, you do **not** need to add it to `INSTALLED_APPS`. You only need to add the Middleware to your `settings.py`.
+
+### Middleware Ordering (CRITICAL)
+
+The order of `MIDDLEWARE` in Django is very important. 
+You must place `UXSPDjangoMiddleware` **AFTER** the standard Security/Session middlewares, but **BEFORE** the CSRF middleware.
+
+Why? Because UXSP inherently replaces the need for CSRF! By placing it before `CsrfViewMiddleware`, UXSP can decrypt the request and verify the cryptographic signature (which acts as the ultimate CSRF protection) before Django's CSRF checker gets angry about missing tokens.
 
 ```python
 # settings.py
+
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'uxsp.contrib.django.UXSPDjangoMiddleware', # Add UXSP Middleware
     'django.middleware.common.CommonMiddleware',
-    # ...
+    
+    # PUT UXSP HERE!
+    'uxsp.contrib.django.UXSPDjangoMiddleware',
+    
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
-
-# Set your Django server identity in settings or via uxsp.secure.set_identity()
-UXSP_IDENTITY = "server_secret_key_or_identity"
-UXSP_REQUIRE_ENCRYPTION = True
 ```
 
-In your views (`views.py`):
-
+### Configuration Options
+You can configure the middleware in `settings.py`:
 ```python
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
+# Force every single request to be encrypted? (Default: False)
+UXSP_REQUIRE_ENCRYPTION = False 
 
-@csrf_exempt
-def secure_view(request):
-    # Retrieve decrypted payload attached to request.uxsp_payload
-    payload = getattr(request, 'uxsp_payload', None)
-    sender_id = getattr(request, 'uxsp_sender_id', None)
-    
-    return JsonResponse({
-        "status": "ok",
-        "received": payload,
-        "sender": sender_id
-    })
+# Exclude certain paths from decryption attempts (like Django Admin)
+UXSP_EXCLUDE_PATHS = ["/admin/", "/static/"]
 ```
 
 ---
 
-## 3. Protecting Views with `@protect_django` Decorator
+## 2. What happens if I only use the Middleware?
 
-Decorate specific Django views for explicit protection:
+If you only install the middleware and don't use any decorators, here is what happens:
+1. **If a user sends an ENCRYPTED request**: The middleware automatically decrypts it. Your Django view will receive the decrypted data in `request.uxsp_payload`.
+2. **If a user sends a PLAIN TEXT request**: The middleware ignores it and lets it pass through normally.
+3. **Outbound Responses**: The middleware will *only* encrypt the response if the incoming request was encrypted.
+
+This "opportunistic" encryption is great for mixed APIs, but if you want to strictly enforce security on specific views, you must use the Decorator.
+
+---
+
+## 3. The `@protect` Decorator
+
+The `@protect` (or `@protect_view`) decorator is used to enforce UXSP on a specific view. 
+
+### Why do programmers need to use decorators?
+If you have a highly sensitive endpoint (like `/transfer_funds`), you **do not** want anyone to access it using plain text. 
+
+By adding the `@protect` decorator, you are telling Django: *"If someone tries to access this endpoint without UXSP encryption, block them immediately!"* Furthermore, it guarantees that whatever you return from that view will be encrypted.
+
+### How and Where to Use It
+You place it right above your view function!
 
 ```python
 from django.http import JsonResponse
-import uxsp
-from uxsp.contrib.django import protect_django
+from uxsp.contrib.django import protect
 
-server_identity = uxsp.create_identity("Django Server", role="SERVER")
-
-@protect_django(server_identity=server_identity)
-def my_protected_view(request):
-    payload = request.uxsp_payload
-    return JsonResponse({"message": "Decrypted payload received", "payload": payload})
+@protect()
+def secure_transfer(request):
+    # Because of @protect, we GUARANTEE that request.uxsp_payload exists
+    # and was cryptographically verified.
+    data = request.uxsp_payload
+    
+    amount = data.get("amount")
+    to_account = data.get("to_account")
+    
+    # Process the transfer...
+    
+    # The dictionary returned here will be AUTOMATICALLY encrypted
+    # by the middleware before it leaves the server!
+    return JsonResponse({"status": "Success", "transferred": amount})
 ```
+
+If a hacker tries to send a standard HTTP POST to `/secure_transfer`, the `@protect` decorator will intercept it and throw an error because the request was not encrypted by UXSP.

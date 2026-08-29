@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 class SecureError(Exception):
     """Base exception for all uxsp.secure operations."""
 

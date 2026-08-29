@@ -407,23 +407,22 @@ class Test14DataTypes:
 
         # Mock stat().st_size to return > 64MB without creating a massive file
         from pathlib import Path
-        original_stat = Path.stat
         class MockStat:
             st_size = 70 * 1024 * 1024
         def mock_stat(self):
             return MockStat()
         monkeypatch.setattr(Path, "stat", mock_stat)
-        
+
         # We also need a dummy file so open() doesn't fail
         dummy_path = temp_dir / "fake_huge.dat"
         dummy_path.write_bytes(b"dummy")
 
         # It should return a Generator since it delegates to SendStream
         gen = sender_func(bob.entity_id, dummy_path)
-        
+
         import types
         assert isinstance(gen, types.GeneratorType), f"{sender_func.__name__} did not return a generator for > 64MB file"
-        
+
         # Pull one chunk to verify it yields packages
         pkg = next(gen)
         assert pkg.data_type == data_type

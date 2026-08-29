@@ -32,15 +32,15 @@ import logging
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from uxsp.contrib import resolve_peer_card
 from uxsp.core.identity import Identity, PublicCard
 from uxsp.secure import (
-    _GLOBAL_CONTEXT,
     Receive,
     SecurePackage,
     Send,
 )
+from uxsp.secure._context import _GLOBAL_CONTEXT
 from uxsp.storage.keystore import KeyStore
-from uxsp.contrib import resolve_peer_card
 
 try:
     from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -114,8 +114,7 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
         is_uxsp_request = False
         package: SecurePackage | None = None
 
-        if header_pkg or header_sender or "application/uxsp+json" in content_type:
-            if body_bytes and body_bytes.strip().startswith(b"{"):
+        if (header_pkg or header_sender or "application/uxsp+json" in content_type) and (body_bytes and body_bytes.strip().startswith(b"{")):
                 try:
                     data_dict = json.loads(body_bytes.decode("utf-8"))
                     if isinstance(data_dict, dict) and "sender_id" in data_dict and ("envelope" in data_dict or "chunks" in data_dict):
@@ -167,14 +166,14 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
                     if getattr(request.state, "is_done", False):
                         if original_receive is not None:
                             # Safely fetch the next message (likely disconnect) if endpoint is done
-                            return await original_receive()
+                            return await original_receive()  # type: ignore[no-any-return]
                         return {"type": "http.disconnect"}
-                        
+
                     if not _receive_state["consumed"]:
                         _receive_state["consumed"] = True
                         return {"type": "http.request", "body": decrypted_bytes, "more_body": False}
                     if original_receive is not None:
-                        return await original_receive()
+                        return await original_receive()  # type: ignore[no-any-return]
                     return {"type": "http.disconnect"}
 
                 request._receive = receive_override  # noqa: B010
@@ -200,13 +199,14 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
         if should_encrypt and request.state.uxsp_sender_card is not None:
             resp_body = getattr(response, "body", None)
             body_iter = getattr(response, "body_iterator", None)
-            
+
             if resp_body is None and body_iter is not None:
                 from starlette.responses import StreamingResponse
-                
-                async def encrypt_stream():
+
+                async def encrypt_stream():  # type: ignore[no-untyped-def]
                     async for chunk in body_iter:
-                        if not chunk: continue
+                        if not chunk:
+                            continue
                         out_pkg = Send(
                             receiver=request.state.uxsp_sender_card,
                             item=chunk,
@@ -214,9 +214,9 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
                             data_type="binary"
                         )
                         yield out_pkg.to_json() + "\n"
-                
+
                 encrypted_response = StreamingResponse(
-                    encrypt_stream(),
+                    encrypt_stream(),  # type: ignore[no-untyped-call]
                     status_code=response.status_code,
                     media_type="application/x-ndjson"
                 )
@@ -232,7 +232,7 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
             if resp_body:
                 if len(resp_body) > self.max_response_size:
                     raise ValueError(f"Response exceeds max_response_size of {self.max_response_size} bytes. Use StreamingResponse instead.")
-                
+
                 try:
                     resp_obj = json.loads(resp_body.decode("utf-8"))
                 except Exception:
@@ -244,7 +244,7 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
                     sender=server_identity,
                 )
 
-                encrypted_response = JSONResponse(
+                encrypted_response = JSONResponse(  # type: ignore[assignment]
                     content=out_pkg.to_dict(),
                     status_code=response.status_code,
                     headers=dict(response.headers),

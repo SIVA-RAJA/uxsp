@@ -18,11 +18,10 @@ import json
 import os
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
-import uxsp
 
 class TestInitPackageNotFound:
     def test_version_fallback_when_package_not_found(self, monkeypatch):
@@ -31,13 +30,12 @@ class TestInitPackageNotFound:
             orig = sys.modules.pop("uxsp", None)
             try:
                 import uxsp as u
-                assert u.__version__ == "1.1.0"
+                assert u.__version__ == "1.2.0"
             finally:
                 if orig is not None:
                     sys.modules["uxsp"] = orig
                 else:
                     sys.modules.pop("uxsp", None)
-                    import uxsp
 
 class FakePublicCard:
     def __init__(self, name="Tester", role="SERVER", entity_id="eid-card-001"):
@@ -82,10 +80,10 @@ class FakeIdentity:
     @classmethod
     def load(cls, path, password):
         return cls()
-        
+
     def rotate_keys(self):
         pass
-        
+
     def revoke(self, reason=None):
         pass
 
@@ -127,25 +125,25 @@ class FakePackage:
 
 def fake_send(data, sender, receiver):
     return FakePackage()
-    
+
 class FakeReceiveData:
     def __init__(self):
         self.filename = "out.txt"
     def read(self):
         return b"data"
-        
+
 def fake_receive(pkg, receiver):
     return FakeReceiveData()
-    
+
 def fake_send_stream(file, sender, receiver):
     yield b"chunk"
-    
+
 def fake_receive_stream(f_in, receiver):
     yield b"chunk"
-    
+
 class FakeLiveSession:
     def __init__(self, identity, peer_card): pass
-    
+
 class FakeLiveVoiceSession:
     def __init__(self, identity, peer_card): pass
 
@@ -164,7 +162,7 @@ def mock_uxsp(monkeypatch):
     monkeypatch.setattr(uxsp.secure, "ReceiveStream", fake_receive_stream)
     monkeypatch.setattr(uxsp, "LiveSession", FakeLiveSession)
     monkeypatch.setattr(uxsp, "LiveVoiceSession", FakeLiveVoiceSession)
-    
+
 def run_cli(monkeypatch, argv: list[str], passwords: list[str] | None = None, *, expect_exit: int | None = None):
     from uxsp.cli import main
 
@@ -304,7 +302,7 @@ class TestRotateRevoke:
         key_path.write_text("fake")
         run_cli(monkeypatch, ["rotate", "--key", str(key_path)], passwords=["secret", "newsecret", "newsecret"])
         assert "Keys rotated" in capsys.readouterr().out
-        
+
     def test_revoke(self, monkeypatch, tmp_path, capsys):
         key_path = tmp_path / "server.uxsp"
         key_path.write_text("fake")
@@ -322,23 +320,23 @@ class TestSecureStreamLive:
         target = tmp_path / "target.txt"
         target.write_text("hello")
         return str(sender_path), str(receiver_card), str(payload), str(target)
-        
+
     def test_secure_send(self, monkeypatch, tmp_path, capsys):
         s, r, p, t = self._setup_files(tmp_path)
         out_path = str(tmp_path / "out.uxsp")
         run_cli(monkeypatch, ["secure", "send", "--sender", s, "--receiver", r, "--file", t, "--out", out_path], passwords=["secret"])
         assert Path(out_path).exists()
-        
+
     def test_secure_send_missing_file_text(self, monkeypatch, tmp_path, capsys):
         s, r, p, t = self._setup_files(tmp_path)
         run_cli(monkeypatch, ["secure", "send", "--sender", s, "--receiver", r], passwords=["secret"], expect_exit=1)
-        
+
     def test_secure_send_text(self, monkeypatch, tmp_path, capsys):
         s, r, p, t = self._setup_files(tmp_path)
         out_path = str(tmp_path / "out.uxsp")
         run_cli(monkeypatch, ["secure", "send", "--sender", s, "--receiver", r, "--text", "hello", "--out", out_path], passwords=["secret"])
         assert Path(out_path).exists()
-        
+
     def test_secure_receive(self, monkeypatch, tmp_path, capsys):
         s, r, p, t = self._setup_files(tmp_path)
         out_path = str(tmp_path / "out.txt")
@@ -350,23 +348,23 @@ class TestSecureStreamLive:
         out_path = str(tmp_path / "out.stream")
         run_cli(monkeypatch, ["stream", "send", "--sender", s, "--receiver", r, "--file", t, "--out", out_path], passwords=["secret"])
         assert Path(out_path).exists()
-        
+
     def test_stream_receive(self, monkeypatch, tmp_path, capsys):
         s, r, p, t = self._setup_files(tmp_path)
         out_path = str(tmp_path / "out.stream")
         run_cli(monkeypatch, ["stream", "receive", "--receiver", s, "--payload", p, "--out", out_path], passwords=["secret"])
         assert Path(out_path).exists()
-        
+
     def test_live_session(self, monkeypatch, tmp_path, capsys):
         s, r, p, t = self._setup_files(tmp_path)
         run_cli(monkeypatch, ["live", "session", "--identity", s, "--peer", r], passwords=["secret"])
         assert "Session established" in capsys.readouterr().out
-        
+
     def test_live_voice(self, monkeypatch, tmp_path, capsys):
         s, r, p, t = self._setup_files(tmp_path)
         run_cli(monkeypatch, ["live", "voice", "--identity", s, "--peer", r], passwords=["secret"])
         assert "Voice session established" in capsys.readouterr().out
-        
+
 class TestMainErrorHandling:
     def test_func_raises_prints_error_and_exits_1(self, monkeypatch, tmp_path, capsys):
         from uxsp.cli import identity
@@ -448,8 +446,8 @@ class TestSecureReceiveNonFile:
         s_path.write_text("fake")
         p_path = tmp_path / "p.uxsp"
         p_path.write_text("fake")
-        
+
         monkeypatch.setattr("uxsp.secure.Receive", lambda pkg, receiver: {"key": "val"})
-        
+
         run_cli(monkeypatch, ["secure", "receive", "--receiver", str(s_path), "--payload", str(p_path)], passwords=["secret"])
         assert "Received Data" in capsys.readouterr().out

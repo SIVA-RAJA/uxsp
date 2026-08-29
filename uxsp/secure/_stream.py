@@ -7,7 +7,8 @@ from typing import Any, BinaryIO
 from uxsp.core.identity import Identity, PublicCard
 from uxsp.secure._errors import SecureSendError
 from uxsp.secure._package import SecurePackage
-from uxsp.secure.types.binary import SendBinary, ReceiveBinary
+from uxsp.secure.types.binary import ReceiveBinary, SendBinary
+
 
 def _iter_chunks_from_source(
     source: str | Path | BinaryIO | Iterable[bytes],

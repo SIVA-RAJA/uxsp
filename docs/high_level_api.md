@@ -1,225 +1,172 @@
-# Comprehensive Guide to `uxsp.secure`
+# High-Level APIs (`uxsp.secure` & `uxsp.aio`)
 
-The `uxsp.secure` module is the high-level, synchronous developer API for UXSP. It is designed so that you do not need to manually configure cryptographic primitives, memory buffers, or handshakes. 
+Welcome to the High-Level APIs of UXSP! This guide will explain how to encrypt and decrypt data easily. 
 
-This guide provides step-by-step instructions for all features available under `uxsp.secure`.
-
----
-
-## 1. Creating and Managing Identities
-
-Everything in UXSP relies on an `Identity`. An `Identity` contains your private keys, while a `PublicCard` contains the public keys that you share with others.
-
-### Step 1.1: Creating an Identity
-```python
-import uxsp
-
-# Create a sender identity
-alice = uxsp.create_identity(name="Alice", role="sender")
-
-# Create a receiver identity
-bob = uxsp.create_identity(name="Bob", role="receiver")
-```
-
-### Step 1.2: Passing Cards to Peers
-To encrypt data for Bob, Alice needs Bob's `PublicCard`.
-```python
-bob_card = bob.public_card()
-```
-*In a real application, you would send `bob_card.to_json()` to Alice over an API, and Alice would load it using `PublicCard.from_json(json_str)`.*
+Our goal is to make Post-Quantum Security so simple that you only need a single line of code to protect your data. You don't need to worry about complex terms like "AES-GCM", "ML-KEM", or "Handshakes" — UXSP handles all of that automatically for you.
 
 ---
 
-## 2. Basic Encryption and Decryption
+## 1. Creating and Using Identities
 
-### Step 2.1: Polymorphic `Send` and `Receive`
-The `Send` and `Receive` functions automatically detect what type of data you are passing (text, dict, list, bytes) and handle it appropriately.
+Before two computers can talk securely, they need an identity. In UXSP, an **Identity** is a package that contains your secret private keys and your public sharing keys.
+
+### How to Create an Identity Correctly
+To create an identity, use the `create_identity` function. You should give your identity a unique name (like "ServerA" or "ClientApp") and secure it with a strong password.
 
 ```python
-import uxsp
+from uxsp.secure import create_identity, export_identity_encrypted
 
-# Alice sends a dictionary (JSON) to Bob
-encrypted_package = uxsp.secure.Send(
-    receiver=bob.public_card(),  # Who is it for?
-    item={"secret": "This is a confidential dictionary"}, # What is the data?
-    sender=alice # Who is sending it?
-)
+# 1. Create a brand new identity
+my_identity = create_identity(entity_id="MyServer")
 
-# Bob receives and decrypts it
-decrypted_data = uxsp.secure.Receive(
-    sender=alice.public_card(),  # Who sent it?
-    package=encrypted_package,   # The encrypted package
-    receiver=bob # Bob uses his private keys to decrypt
-)
-
-print(decrypted_data) # Output: {'secret': 'This is a confidential dictionary'}
+# 2. Save it to a file so you don't lose it!
+export_identity_encrypted(my_identity, "my_server_key.uxsp", "SuperSecretPassword123")
 ```
 
-### Step 2.2: Specialized Handlers
-If you want strict type hinting and validation in your code, use the specialized helpers instead of the generic `Send`.
+### Loading an Identity
+When you restart your app, you just load that identity back into memory:
 
-**For Strings (Text):**
 ```python
-pkg = uxsp.secure.SendText(receiver=bob.public_card(), text="Hello Bob", sender=alice)
-text = uxsp.secure.ReceiveText(package=pkg, sender=alice.public_card(), receiver=bob)
+from uxsp.secure import import_identity_encrypted, set_identity
+
+# Load the identity from the file
+my_identity = import_identity_encrypted("my_server_key.uxsp", "SuperSecretPassword123")
+
+# Set it as the default identity for the entire app
+set_identity(my_identity)
 ```
 
-**For JSON / Dicts:**
-```python
-pkg = uxsp.secure.SendJSON(receiver=bob.public_card(), data={"id": 1}, sender=alice)
-data = uxsp.secure.ReceiveJSON(package=pkg, sender=alice.public_card(), receiver=bob)
-```
-
-**For Raw Bytes / Binary:**
-```python
-pkg = uxsp.secure.SendBinary(receiver=bob.public_card(), data=b"\x00\xFF", sender=alice)
-raw = uxsp.secure.ReceiveBinary(package=pkg, sender=alice.public_card(), receiver=bob)
-```
+By calling `set_identity()`, UXSP will automatically use this identity for all background operations. You won't have to pass it manually every time you want to send a message!
 
 ---
 
-## 3. Working with Files
+## 2. Sending and Receiving Data (The `uxsp.secure` module)
 
-UXSP can seamlessly encrypt and decrypt files from your hard drive. It detects 14 different file types based on the extension (e.g., `.pdf`, `.mp4`, `.docx`, `.png`).
+The `uxsp.secure` module provides easy-to-use classes for transferring data. Depending on what you are sending, you pick a specific `Send*` and `Receive*` class. 
 
-### Step 3.1: Encrypting a File
+Under the hood, these classes compress, encrypt, and package your data so it cannot be tampered with or read by anyone except the intended recipient.
+
+### The Send and Receive Classes
+
+Here is exactly how and when to use the available classes:
+
+*   **`SendText` / `ReceiveText`**: Use this when you are sending simple string messages, like chat messages or small status updates.
+*   **`SendJSON` / `ReceiveJSON`**: Use this when you need to send structured data (like Python dictionaries). UXSP will automatically convert your dictionary to JSON before encrypting it.
+*   **`SendBinary` / `ReceiveBinary`**: Use this when you have raw byte data (`b"hello"`) that doesn't fit into another category.
+*   **`SendFile` / `ReceiveFile`**: Use this to securely transfer standard files from your hard drive. Just provide the file path!
+*   **`SendImage` / `ReceiveImage` & `SendPhoto` / `ReceivePhoto`**: Use these when transferring pictures (JPG, PNG). They automatically add the correct metadata so the receiver knows it's an image.
+*   **`SendVideo` / `ReceiveVideo`**: Use this for video files (MP4, MKV).
+*   **`SendAudio` / `ReceiveAudio` & `SendVoice` / `ReceiveVoice`**: Use these for audio files (MP3, WAV) or recorded voice memos.
+*   **`SendDocument` / `ReceiveDocument` & `SendDoc` / `ReceiveDoc`**: Use these for office files like Word documents, spreadsheets, or plain text documents.
+*   **`SendPDF` / `ReceivePDF`**: Specifically meant for transferring PDF files securely.
+*   **`SendZip` / `ReceiveZip` & `SendArchive` / `ReceiveArchive`**: Use these when you are transferring zipped or archived directories.
+*   **`SendLocation` / `ReceiveLocation`**: Use this when you want to send GPS coordinates securely (e.g., sharing a live location in a chat app).
+*   **`SendContact` / `ReceiveContact`**: Use this when sharing vCard contact information.
+*   **`Send` / `Receive`**: The ultimate generic classes. If you don't want to pick a specific class from the list above, you can just use `Send` and `Receive` and let UXSP figure it out!
+
+### Example: Sending a JSON Message
+
 ```python
-# Alice encrypts a PDF file from her disk
-pkg = uxsp.secure.SendFile(
-    receiver=bob.public_card(),
-    file_path="/home/alice/secret_report.pdf",
-    sender=alice
-)
-```
+from uxsp.secure import SendJSON, ReceiveJSON
 
-### Step 3.2: Decrypting a File to Disk
-When receiving a file, you can specify an `output_file` path to save the decrypted contents directly to disk, avoiding memory overload.
-
-```python
-uxsp.secure.ReceiveFile(
-    package=pkg,
-    output_file="/home/bob/downloads/restored_report.pdf",
-    sender=alice.public_card(),
-    receiver=bob
+# Sender's Code:
+# The `receiver` argument is the public card of the person you are sending data to.
+encrypted_package = SendJSON(
+    item={"status": "active", "user": "Alice"},
+    receiver=recipient_public_card 
 )
+
+# You can now send `encrypted_package.to_dict()` over the internet!
+print(encrypted_package.to_dict())
+
+# ----------------------------------------
+
+# Receiver's Code:
+# When the receiver gets the package, they just call ReceiveJSON!
+decrypted_data = ReceiveJSON(
+    package=received_package_dict
+)
+
+print(decrypted_data) # Output: {'status': 'active', 'user': 'Alice'}
 ```
+It really is that simple. One line to encrypt, one line to decrypt.
 
 ---
 
-## 4. Multi-Gigabyte File Streaming
+## 3. Synchronous vs. Asynchronous (`uxsp.secure` vs `uxsp.aio`)
 
-If you are dealing with files larger than your available RAM (e.g., a 10GB `.zip` file or a 50GB `.mp4`), loading the entire file into memory to encrypt it will crash your server (OOM Error).
+You might have noticed there is a `uxsp.secure` module and a `uxsp.aio` module. 
 
-To solve this, UXSP provides `SendStream` and `ReceiveStream`. These functions process the file in small cryptographic chunks (e.g., 1MB at a time).
+### What is the difference?
+*   **`uxsp.secure` (Synchronous)**: This blocks the current thread until the encryption/decryption finishes. Use this in standard scripts, standard Flask/Django apps, or CLI tools.
+*   **`uxsp.aio` (Asynchronous)**: This does *not* block the thread. It uses Python's `async/await` syntax. 
 
-### Step 4.1: Stream Encryption directly to Disk
-You can stream the encryption of a massive file and write the resulting `SecurePackage` JSON strings line-by-line to an output file.
+### Why and When to use `aio`?
+You should use `uxsp.aio` when you are building highly concurrent applications using frameworks like **FastAPI**, **Starlette**, **Quart**, or when building **WebSocket** servers. 
 
+In a high-traffic web server, if 100 people send a file at the exact same time, a synchronous app will process them one by one, slowing everyone down. An `aio` app will process them simultaneously without blocking the server.
+
+**Example of `aio` usage:**
 ```python
-output_path = uxsp.secure.SendStream(
-    receiver=bob.public_card(),
-    file_input="/path/to/massive_database.sql",
-    output_destination="/path/to/encrypted_stream.uxsp",
-    chunk_size=1024 * 1024, # 1 MB chunks
-    sender=alice
-)
-```
+from uxsp.aio import SendJSON, ReceiveJSON
 
-### Step 4.2: Stream Encryption to a Generator
-If you do not provide an `output_destination`, `SendStream` returns a Python generator. You can use this generator to stream the encrypted chunks over a network socket or HTTP response chunk-by-chunk.
+async def handle_request(incoming_data):
+    # Notice the "await" keyword!
+    decrypted_data = await ReceiveJSON(package=incoming_data)
+    
+    # ... process data ...
 
-```python
-chunk_generator = uxsp.secure.SendStream(
-    receiver=bob.public_card(),
-    file_input="/path/to/massive_database.sql",
-    chunk_size=1024 * 1024,
-    sender=alice
-)
-
-for encrypted_chunk_package in chunk_generator:
-    # Send this chunk over the network immediately
-    send_to_network(encrypted_chunk_package.to_json())
-```
-
-### Step 4.3: Decrypting a Stream Directly to Disk
-Bob can read the massive encrypted stream file line-by-line, decrypt it chunk-by-chunk, and write the decrypted bytes directly to a file on his disk.
-
-```python
-uxsp.secure.ReceiveStream(
-    packages_or_stream="/path/to/encrypted_stream.uxsp",
-    output_file="/path/to/restored_database.sql",
-    sender=alice.public_card(),
-    receiver=bob
-)
+    response_pkg = await SendJSON(item={"success": True}, receiver=sender_card)
+    return response_pkg
 ```
 
 ---
 
-## 5. Enterprise Key Lifecycle Management
+## 4. Sending Very, Very Large Files
 
-UXSP allows you to control the lifecycle of your keys securely.
+If you need to send a massive file (like a 50GB database backup or a 10GB 4K video), you **cannot** use `SendFile` because it will try to load the entire 50GB file into your computer's RAM, causing a crash!
 
-### Step 5.1: Key Rotation
-If you want to cycle your cryptographic keys periodically (e.g., every 90 days) without changing your user ID, you can use `rotate_keys()`.
+Instead, you must use **Streaming**. 
+Streaming reads the file in tiny chunks, encrypts each chunk one by one, and sends it over the network. 
 
+### Using `SendStream` and `ReceiveStream`
 ```python
-# Alice generates a new underlying keypair
-alice_new = alice.rotate_keys()
+from uxsp.secure import SendStream, ReceiveStream
 
-# The identity ID remains the same!
-print(alice.entity_id == alice_new.entity_id) # True
+# SENDER:
+def stream_my_huge_file():
+    # SendStream yields chunks of encrypted data
+    for encrypted_chunk in SendStream(item="/path/to/50GB_video.mp4", receiver=recipient_card):
+        yield encrypted_chunk  # Send this chunk over the network
 
-# The Key Version increments
-print(alice_new.key_version) # 2
+# RECEIVER:
+# When you receive chunks over the network, pass them to ReceiveStream
+def process_incoming_stream(network_stream_iterator):
+    # This automatically decrypts chunks as they arrive and writes them to disk
+    ReceiveStream(
+        package=network_stream_iterator,
+        output_file="/path/to/save/50GB_video.mp4"
+    )
 ```
-
-### Step 5.2: Public Card Expiration
-When distributing a public card to a peer, you can enforce that they must encrypt data using it before a certain expiration date.
-
-```python
-# Issue a card that expires in exactly 1 hour (3600 seconds)
-expiring_card = alice.public_card(ttl_seconds=3600)
-
-# Check if it has expired
-print(expiring_card.is_expired()) # False
-```
-
-### Step 5.3: Card Revocation
-If a device is compromised, you can revoke a card immediately.
-
-```python
-card = alice.public_card()
-card.revoke(reason="Laptop was stolen")
-
-try:
-    card.verify_validity()
-except uxsp.core.identity.CardRevokedError as e:
-    print(f"Cannot use this card: {e}")
-```
+*Note: If you are using FastAPI or WebSockets, use `uxsp.aio.SendStream` and `uxsp.aio.ReceiveStream` instead!*
 
 ---
 
-## 6. In-Memory Identity Serialization
+## 5. Key Rotation
 
-When running a web server (like FastAPI or Django), you often need to store the server's `Identity` (its private keys) securely in a database or Redis cache. You can encrypt the `Identity` using a strong password before saving it.
+In high-security environments, it is a best practice to change your encryption keys regularly. This is called **Key Rotation**. 
 
-### Step 6.1: Exporting an Identity
+If an attacker somehow steals your key today, they can read today's messages. But if you rotate your key tomorrow, they can't read tomorrow's messages.
+
+With UXSP, rotating keys is incredibly easy:
+
 ```python
-# Convert Alice's identity into an encrypted JSON string
-encrypted_identity_string = alice.export_encrypted(password="SuperStrongMasterPassword!")
+from uxsp.secure import rotate_keys, export_identity_encrypted
 
-# Save this string to your database
-database.save("alice_keys", encrypted_identity_string)
+# 1. Rotate the keys (generates brand new post-quantum and classical keys)
+new_identity = rotate_keys(my_current_identity)
+
+# 2. Save the newly rotated identity
+export_identity_encrypted(new_identity, "my_server_key_v2.uxsp", "SuperSecretPassword123")
 ```
-
-### Step 6.2: Restoring an Identity
-```python
-# Retrieve the string from your database
-encrypted_identity_string = database.get("alice_keys")
-
-# Restore the Identity object using the password
-restored_alice = uxsp.import_identity_encrypted(
-    encrypted_json=encrypted_identity_string, 
-    password="SuperStrongMasterPassword!"
-)
-```
+Once rotated, you just distribute your new Public Card to your peers. UXSP handles the transition smoothly!
