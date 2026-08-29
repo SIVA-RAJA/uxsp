@@ -20,5 +20,8 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^26.4.0"
+  },
+  "dependencies": {
+    "@oqs/liboqs-js": "^0.15.1"
   }
 }

@@ -179,6 +179,23 @@ class Session:
     _max_seen_seq: int
     _recv_count: int
 
+    __slots__ = (
+        "session_id",
+        "local_id",
+        "remote_id",
+        "_config",
+        "_state",
+        "_created_at",
+        "_lock",
+        "_send_seq",
+        "_recv_seq",
+        "_seen_seqs",
+        "_max_seen_seq",
+        "_recv_count",
+        "_send_key",
+        "_recv_key",
+    )
+
     def __init__(
         self,
         session_id: str,

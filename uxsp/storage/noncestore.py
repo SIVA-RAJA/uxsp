@@ -18,6 +18,9 @@ Available backends:
     RedisNonceStore         — Redis string keys with native TTL expiry.
     PostgresNonceStore      — PostgreSQL table with expires_at column.
     TieredNonceStore        — Redis L1 + Postgres L2 (recommended production).
+    
+    AsyncNonceStore         — Async ABC for async nonce stores.
+    AsyncRedisNonceStore    — Native async Redis backend.
 
 Also re-exported from uxsp.core.nonce:
     NonceStore, MemoryNonceStore, UXSPStoreError, generate_nonce, NONCE_BYTES.
@@ -34,6 +37,7 @@ from datetime import UTC
 from datetime import datetime as _dt
 from datetime import timedelta as _td
 from typing import Any
+from abc import ABC, abstractmethod
 
 # Re-export core abstractions so callers can import from one place
 from uxsp.core.nonce import (  # noqa: F401  (re-export)
@@ -211,6 +215,52 @@ class RedisNonceStore(NonceStore):
 
     def cleanup(self) -> int:
         """Redis handles expiry automatically. No-op."""
+        return 0
+
+
+class AsyncNonceStore(ABC):
+    """
+    Abstract base class for all async UXSP nonce stores.
+    """
+    @abstractmethod
+    async def mark_used(self, nonce: str, ttl_seconds: int = 300) -> bool: ...
+    
+    @abstractmethod
+    async def is_seen(self, nonce: str) -> bool: ...
+    
+    @abstractmethod
+    async def cleanup(self) -> int: ...
+
+
+class AsyncRedisNonceStore(AsyncNonceStore):
+    """
+    Native Async Redis backend for AsyncNonceStore.
+    """
+    def __init__(self, async_redis_client: Any, key_prefix: str = "uxsp:nonce:") -> None:
+        self._redis = async_redis_client
+        self._prefix = key_prefix
+
+    def _key(self, nonce: str) -> str:
+        return f"{self._prefix}{nonce}"
+
+    async def mark_used(self, nonce: str, ttl_seconds: int = 300) -> bool:
+        try:
+            result = await self._redis.set(self._key(nonce), "1", nx=True, ex=ttl_seconds)
+            return result is True
+        except Exception as e:
+            raise UXSPStoreError(
+                f"Async Nonce store unavailable (Redis): {e}. "
+                f"Replay protection cannot be guaranteed. "
+                f"Reject this envelope."
+            ) from e
+
+    async def is_seen(self, nonce: str) -> bool:
+        try:
+            return bool(await self._redis.exists(self._key(nonce)) > 0)
+        except Exception as e:
+            raise UXSPStoreError(f"Async Nonce store unavailable (Redis): {e}.") from e
+
+    async def cleanup(self) -> int:
         return 0
 
 

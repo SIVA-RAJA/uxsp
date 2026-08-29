@@ -241,6 +241,8 @@ class Identity:
         with both Ed25519 and ML-DSA, and returns an Envelope containing all
         wire-level fields.
         """
+        if recipient_card.is_revoked:
+            raise CardRevokedError(f"Cannot seal for revoked card: {recipient_card.entity_id}")
         recipient_card.verify_validity()
 
         raw = seal(
@@ -263,6 +265,8 @@ class Identity:
         Verifies that sender_card is valid (neither expired nor revoked).
         A ReplayGuard instance is strictly required to prevent replay attacks.
         """
+        if sender_card.is_revoked:
+            raise CardRevokedError(f"Cannot open from revoked card: {sender_card.entity_id}")
         sender_card.verify_validity()
 
         if replay_guard is None:

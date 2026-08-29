@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import functools
 import json
+import logging
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -40,6 +41,7 @@ from uxsp.secure import (
     Send,
 )
 from uxsp.storage.keystore import KeyStore
+from uxsp.contrib import resolve_peer_card
 
 try:
     from django.conf import settings
@@ -50,6 +52,8 @@ except ImportError as err:  # pragma: no cover
         "Install it via 'pip install uxsp[django]'"
     ) from err
 
+
+logger = logging.getLogger(__name__)
 
 class UXSPDjangoMiddleware:
     """
@@ -75,15 +79,7 @@ class UXSPDjangoMiddleware:
             return self.identity
         return _GLOBAL_CONTEXT.get_identity()
 
-    def _resolve_peer_card(self, sender_id: str) -> PublicCard | None:
-        if self.keystore is not None:
-            card = self.keystore.public_card(sender_id) if hasattr(self.keystore, "public_card") else self.keystore.get(sender_id)
-            if card is not None:
-                return card.card if hasattr(card, "card") else card
-        try:
-            return _GLOBAL_CONTEXT.get_peer(sender_id)
-        except Exception:
-            return None
+
 
     def __call__(self, request: HttpRequest) -> HttpResponse:
         path = request.path
@@ -98,25 +94,27 @@ class UXSPDjangoMiddleware:
 
         header_pkg = request.META.get("HTTP_X_UXSP_PACKAGE")
         header_sender = request.META.get("HTTP_X_UXSP_SENDER")
+        content_type = request.META.get("CONTENT_TYPE", "")
 
         body_bytes = request.body
         is_uxsp_request = False
         package: SecurePackage | None = None
 
-        if header_pkg or header_sender or (body_bytes and body_bytes.strip().startswith(b"{")):
-            try:
-                data_dict = json.loads(body_bytes.decode("utf-8"))
-                if isinstance(data_dict, dict) and "sender_id" in data_dict and ("envelope" in data_dict or "chunks" in data_dict):
-                    package = SecurePackage.from_dict(data_dict)
-                    is_uxsp_request = True
-            except Exception:
-                pass
+        if header_pkg or header_sender or "application/uxsp+json" in content_type:
+            if body_bytes and body_bytes.strip().startswith(b"{"):
+                try:
+                    data_dict = json.loads(body_bytes.decode("utf-8"))
+                    if isinstance(data_dict, dict) and "sender_id" in data_dict and ("envelope" in data_dict or "chunks" in data_dict):
+                        package = SecurePackage.from_dict(data_dict)
+                        is_uxsp_request = True
+                except Exception:
+                    pass
 
         server_identity = self._get_identity()
 
         if is_uxsp_request and package is not None:
             sender_id = package.sender_id
-            sender_card = self._resolve_peer_card(sender_id)
+            sender_card = resolve_peer_card(self.keystore, sender_id)
 
             try:
                 received_item = Receive(
@@ -136,7 +134,7 @@ class UXSPDjangoMiddleware:
                 request.uxsp_encrypted = True
                 request.uxsp_payload = parsed_payload
                 request.uxsp_sender_id = sender_id
-                request.uxsp_sender_card = sender_card or self._resolve_peer_card(sender_id)
+                request.uxsp_sender_card = sender_card or resolve_peer_card(self.keystore, sender_id)
 
                 if isinstance(parsed_payload, (dict, list)):
                     request._body = json.dumps(parsed_payload).encode("utf-8")
@@ -145,8 +143,9 @@ class UXSPDjangoMiddleware:
                 else:
                     request._body = str(parsed_payload).encode("utf-8")
             except Exception as e:
+                logger.error("UXSP decryption failed: %s", e, exc_info=True)
                 return JsonResponse(
-                    {"error": "UXSP Decryption Failed", "detail": str(e)},
+                    {"error": "UXSP Decryption Failed"},
                     status=400,
                 )
         elif self.require_encryption:
@@ -185,6 +184,7 @@ class UXSPDjangoMiddleware:
                 encrypted_response["X-UXSP-Package"] = "1"
                 encrypted_response["X-UXSP-Sender"] = server_identity.entity_id
                 encrypted_response["X-UXSP-Recipient"] = getattr(request, "uxsp_sender_id", "") or ""
+                encrypted_response["X-UXSP-Version"] = "1"
                 return encrypted_response
 
             content = response.content
@@ -205,6 +205,7 @@ class UXSPDjangoMiddleware:
             encrypted_response["X-UXSP-Package"] = "1"
             encrypted_response["X-UXSP-Sender"] = server_identity.entity_id
             encrypted_response["X-UXSP-Recipient"] = getattr(request, "uxsp_sender_id", "") or ""
+            encrypted_response["X-UXSP-Version"] = "1"
             return encrypted_response
 
         return response

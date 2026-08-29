@@ -14,6 +14,8 @@ import os
 import struct
 
 from uxsp.crypto.symmetric import KEY_SIZE, NONCE_SIZE, encrypt, decrypt
+from uxsp.crypto.kdf import derive_key
+from uxsp.core.replay import ReplayError
 
 
 class LiveSession:
@@ -21,7 +23,7 @@ class LiveSession:
     Manages a blazing-fast AES-GCM symmetric session key for real-time video/audio frames.
     """
 
-    def __init__(self, key: bytes | None = None) -> None:
+    def __init__(self, key: bytes | None = None, session_id: bytes | None = None) -> None:
         """
         Initialize the session. If key is None, a new random 256-bit key is generated.
         """
@@ -31,6 +33,13 @@ class LiveSession:
             if len(key) != KEY_SIZE:
                 raise ValueError(f"LiveSession key must be {KEY_SIZE} bytes.")
             self.key = bytes(key)
+        self.session_id_bytes = session_id if isinstance(session_id, bytes) else (session_id.encode() if session_id else os.urandom(16))
+        self._frame_count = 0
+        self._last_seq = -1
+
+    def _ratchet_key(self) -> None:
+        self.key = derive_key(self.key, info=b"UXSP-live-ratchet", length=32)
+        self._frame_count = 0
 
     @classmethod
     def generate(cls) -> LiveSession:
@@ -47,13 +56,20 @@ class LiveSession:
         if len(metadata) > 65535:
             raise ValueError("Metadata too large (max 65535 bytes).")
 
-        enc_dict = encrypt(bytes(frame), self.key, associated_data=metadata)
+        ad = self.session_id_bytes + metadata
+        enc_dict = encrypt(bytes(frame), self.key, associated_data=ad)
         
         # Combine length + metadata + nonce + ciphertext
         meta_len = struct.pack(">H", len(metadata))
-        return meta_len + metadata + enc_dict["nonce"] + enc_dict["ciphertext"]
+        result = meta_len + metadata + enc_dict["nonce"] + enc_dict["ciphertext"]
+        
+        self._frame_count += 1
+        if self._frame_count >= 65536:
+            self._ratchet_key()
+            
+        return result
 
-    def decrypt_frame(self, encrypted_frame: bytes | bytearray) -> tuple[bytes, bytes]:
+    def decrypt_frame(self, encrypted_frame: bytes | bytearray, expected_seq: int | None = None) -> tuple[bytes, bytes]:
         """
         Decrypt a raw binary frame received over the wire.
         Returns a tuple: (decrypted_frame_bytes, unencrypted_metadata_bytes)
@@ -70,7 +86,18 @@ class LiveSession:
         nonce = encrypted_frame[2 + meta_len : 2 + meta_len + NONCE_SIZE]
         ciphertext = encrypted_frame[2 + meta_len + NONCE_SIZE :]
         
-        decrypted = decrypt(ciphertext, nonce, self.key, associated_data=metadata)
+        ad = self.session_id_bytes + metadata
+        decrypted = decrypt(ciphertext, nonce, self.key, associated_data=ad)
+        
+        if expected_seq is not None:
+            if expected_seq <= self._last_seq:
+                raise ReplayError("Frame replay detected")
+            self._last_seq = expected_seq
+            
+        self._frame_count += 1
+        if self._frame_count >= 65536:
+            self._ratchet_key()
+            
         return decrypted, metadata
 
     @classmethod
@@ -80,10 +107,10 @@ class LiveSession:
         attached to a frame without needing the decryption key.
         """
         if len(encrypted_frame) < 2:
-            return b""
+            raise ValueError("Malformed frame: too short to contain metadata length.")
         meta_len = struct.unpack(">H", encrypted_frame[:2])[0]
         if len(encrypted_frame) < 2 + meta_len:
-            return b""
+            raise ValueError("Malformed frame: too short to contain full metadata.")
         return encrypted_frame[2 : 2 + meta_len]
 
     def encrypt_voice_frame(
@@ -145,11 +172,12 @@ class LiveVoiceSession(LiveSession):
     def __init__(
         self,
         key: bytes | None = None,
+        session_id: bytes | None = None,
         codec: str = "opus",
         sample_rate: int = 48000,
         channels: int = 1,
     ) -> None:
-        super().__init__(key=key)
+        super().__init__(key=key, session_id=session_id)
         self.codec = codec
         self.sample_rate = sample_rate
         self.channels = channels
@@ -164,7 +192,7 @@ class LiveVoiceSession(LiveSession):
         channels: int = 1,
     ) -> LiveVoiceSession:
         """Create a new LiveVoiceSession with fresh cryptographic key and call settings."""
-        return cls(key=None, codec=codec, sample_rate=sample_rate, channels=channels)
+        return cls(key=None, session_id=None, codec=codec, sample_rate=sample_rate, channels=channels)
 
     def mute(self) -> None:
         """Mute local audio transmission state."""

@@ -18,6 +18,7 @@ Strategy
 
 from __future__ import annotations
 
+import collections
 import threading
 import time
 import unittest
@@ -295,7 +296,7 @@ class TestSlidingRateLimiter(unittest.TestCase):
         """Cover the `else float(self._window)` branch when timestamps is empty."""
         rl = SlidingRateLimiter(max_requests=1, window_seconds=60)
         # Manually set state: key present but empty list, count >= max
-        rl._log["prefeve"] = []
+        rl._log["prefeve"] = collections.deque()
         # Force check to see len([]) >= 1 is False, so we need max=0 path instead.
         # Actually test the branch via a direct _log manipulation:
         # Put a key whose pruned list is empty but still triggers the branch.
@@ -327,7 +328,7 @@ class TestSlidingRateLimiter(unittest.TestCase):
         """Keys with a mix of old + new timestamps: old ones get pruned."""
         rl = SlidingRateLimiter(max_requests=5, window_seconds=1.0)
         now = time.time()
-        rl._log["prefix_hank"] = [now - 2.0, now - 0.1]  # one stale, one fresh
+        rl._log["prefix_hank"] = collections.deque([now - 2.0, now - 0.1])  # one stale, one fresh
         removed = rl.cleanup()
         self.assertEqual(removed, 0)  # key still active
         self.assertEqual(len(rl._log.get("prefix_hank", [])), 1)
@@ -362,6 +363,14 @@ class TestSlidingRateLimiter(unittest.TestCase):
         rl = SlidingRateLimiter(max_requests=1, window_seconds=60)
         rl.check("kim")
         self.assertEqual(rl.remaining("kim"), 0)
+
+    def test_remaining_breaks_on_old_timestamp(self):
+        """Coverage for the `break` statement in the `remaining` method's reverse loop."""
+        rl = SlidingRateLimiter(max_requests=5, window_seconds=60)
+        now = time.time()
+        # One expired timestamp (now - 100) and one fresh timestamp (now - 10)
+        rl._log["kim"] = collections.deque([now - 100, now - 10])
+        self.assertEqual(rl.remaining("kim"), 4)
 
     def test_key_prefix_applied(self):
         rl = SlidingRateLimiter(max_requests=1, window_seconds=60, key_prefix="pfx:")

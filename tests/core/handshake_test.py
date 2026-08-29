@@ -184,7 +184,7 @@ def ack_msg(responder, session_id, initiator_card):
     """A freshly built, valid AckMessage."""
     shared_secret_A = b"\xcc" * 32
     msg, _ = _make_ack(responder, session_id, "alice-id-1234",
-                       shared_secret_A, initiator_card)
+                       shared_secret_A, initiator_card, "1")
     return msg
 
 
@@ -218,7 +218,7 @@ class TestMakeHello:
     def test_returns_correct_structure(self, initiator, responder_card, session_id):
         msg, exchange = _make_hello(initiator, responder_card, session_id)
         assert msg["type"]       == "UXSP-HELLO"
-        assert msg["version"]    == "1"
+        assert msg["supported_versions"] == ["1"]
         assert msg["session_id"] == session_id
         assert msg["initiator_id"] == initiator.entity_id
         assert msg["responder_id"] == responder_card.entity_id
@@ -312,12 +312,11 @@ class TestVerifyHelloSignature:
         with pytest.raises(HandshakeAuthError, match="not for this responder"):
             _verify_hello_signature(msg, initiator_card, responder)
 
-    # --- wrong version ---
     def test_raises_auth_on_wrong_version(self, initiator, responder_card,
                                            initiator_card, responder, session_id):
         msg = self._valid_hello(initiator, responder_card, session_id)
-        msg["version"] = "2"
-        with pytest.raises(HandshakeAuthError, match="Unsupported hello version"):
+        msg["supported_versions"] = ["2"]
+        with pytest.raises(HandshakeAuthError, match="No common protocol version supported"):
             _verify_hello_signature(msg, initiator_card, responder)
 
     # --- malformed hex fields ---
@@ -349,9 +348,10 @@ class TestVerifyHelloSignature:
     def test_happy_path_returns_signable(self, initiator, responder_card,
                                           initiator_card, responder, session_id):
         msg = self._valid_hello(initiator, responder_card, session_id)
-        result = _verify_hello_signature(msg, initiator_card, responder)
+        result, negotiated_version = _verify_hello_signature(msg, initiator_card, responder)
         assert isinstance(result, bytes)
         assert len(result) > 0
+        assert negotiated_version == "1"
 
 
 # ===========================================================================
@@ -382,7 +382,7 @@ class TestMakeAck:
     def test_returns_correct_structure(self, responder, session_id, initiator_card):
         shared_secret_A = b"\xcc" * 32
         ack, exchange = _make_ack(responder, session_id, "alice-id-1234",
-                                  shared_secret_A, initiator_card)
+                                  shared_secret_A, initiator_card, "1")
         assert ack["type"]        == "UXSP-ACK"
         assert ack["version"]     == "1"
         assert ack["session_id"]  == session_id
@@ -397,7 +397,7 @@ class TestMakeAck:
     def test_proof_is_hmac_of_shared_secret(self, responder, session_id, initiator_card):
         shared_secret_A = b"\xcc" * 32
         ack, _ = _make_ack(responder, session_id, "alice-id-1234",
-                            shared_secret_A, initiator_card)
+                            shared_secret_A, initiator_card, "1")
         expected_proof = hmac.new(
             shared_secret_A,
             (session_id + ":responder-proof").encode(),
@@ -408,7 +408,7 @@ class TestMakeAck:
     def test_exchange_result_has_shared_key(self, responder, session_id, initiator_card):
         shared_secret_A = b"\xcc" * 32
         _, exchange = _make_ack(responder, session_id, "alice-id-1234",
-                                shared_secret_A, initiator_card)
+                                shared_secret_A, initiator_card, "1")
         assert "shared_key" in exchange
 
 
@@ -421,7 +421,7 @@ class TestVerifyAckSignature:
     def _valid_ack(self, responder, session_id, initiator_card):
         shared_secret_A = b"\xcc" * 32
         msg, _ = _make_ack(responder, session_id, "alice-id-1234",
-                            shared_secret_A, initiator_card)
+                            shared_secret_A, initiator_card, "1")
         return msg
 
     # --- missing fields ---
@@ -514,7 +514,7 @@ class TestDeriveAckSecret:
     def _valid_ack(self, responder, session_id, initiator_card):
         shared_secret_A = b"\xcc" * 32
         msg, _ = _make_ack(responder, session_id, "alice-id-1234",
-                            shared_secret_A, initiator_card)
+                            shared_secret_A, initiator_card, "1")
         return msg, shared_secret_A
 
     def test_proof_mismatch_raises(self, responder, session_id, initiator_card, initiator):

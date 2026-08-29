@@ -58,7 +58,23 @@ export class UXSPClient {
     pkg: SecurePackage
   ): Promise<Uint8Array> {
     if (pkg.is_chunked) {
-      throw new Error("Chunked packages are not yet supported for client-side decryption.");
+      if (!pkg.chunks || pkg.chunks.length === 0) {
+        throw new Error("Package is marked as chunked but contains no chunks.");
+      }
+      const decryptedChunks: Uint8Array[] = [];
+      let totalLength = 0;
+      for (const chunkEnvelope of pkg.chunks) {
+        const decrypted = await openSeal(receiver, senderCard, chunkEnvelope);
+        decryptedChunks.push(decrypted);
+        totalLength += decrypted.length;
+      }
+      const result = new Uint8Array(totalLength);
+      let offset = 0;
+      for (const chunk of decryptedChunks) {
+        result.set(chunk, offset);
+        offset += chunk.length;
+      }
+      return result;
     }
     if (!pkg.envelope) {
       throw new Error("SecurePackage is missing its envelope.");

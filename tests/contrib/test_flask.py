@@ -89,7 +89,7 @@ def test_flask_middleware_keystore_and_text_response(server_identity, client_ide
         sender=client_identity,
     )
 
-    response = test_client.post("/api/text", data=pkg.to_json(), content_type="application/json")
+    response = test_client.post("/api/text", data=pkg.to_json(), content_type="application/json", headers={"X-UXSP-Package": "1"})
     assert response.status_code == 200
     assert response.headers.get("X-UXSP-Package") == "1"
 
@@ -223,7 +223,7 @@ def test_flask_middleware_malformed_package(server_identity):
     test_client = app.test_client()
 
     # Invalid json body test
-    res_bad_json = test_client.post("/api/echo", data="not json", content_type="text/plain", headers={"X-UXSP-Package": "1"})
+    res_bad_json = test_client.post("/api/echo", data="{not json}", content_type="text/plain", headers={"X-UXSP-Package": "1"})
     assert res_bad_json.status_code == 200
 
     fake_pkg = {
@@ -234,7 +234,7 @@ def test_flask_middleware_malformed_package(server_identity):
         "envelope": {"magic": "UXSP-INVALID", "ciphertext": "bad"},
     }
 
-    response = test_client.post("/api/echo", json=fake_pkg)
+    response = test_client.post("/api/echo", json=fake_pkg, headers={"X-UXSP-Package": "1"})
     assert response.status_code == 400
     assert "Decryption Failed" in response.get_json()["error"]
 

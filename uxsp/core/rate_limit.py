@@ -19,9 +19,14 @@ Key classes:
     RedisSlidingRateLimiter — Sliding-window Redis limiter using sorted sets (production).
     GuardedHandshake      — Combines rate limiting with Handshake.respond().
     RateLimitExceededError — Raised when a key exceeds its request quota.
+    
+    AsyncRateLimiterBase  — Abstract base class for async limiters.
+    AsyncRedisRateLimiter — Native async fixed-window limiter.
+    AsyncRedisSlidingRateLimiter — Native async sliding-window limiter.
 """
 from __future__ import annotations
 
+import collections
 import threading
 import time
 import uuid
@@ -32,6 +37,7 @@ from uxsp.core.handshake import Handshake
 from uxsp.core.identity import Identity, PublicCard
 from uxsp.core.nonce import MemoryNonceStore, NonceStore
 from uxsp.core.session import SessionConfig
+from uxsp.storage.noncestore import AsyncNonceStore
 
 # ─────────────────────────────────────────────
 # ERRORS
@@ -69,6 +75,22 @@ class RateLimiterBase(ABC):
     @abstractmethod
     def cleanup(self) -> int:
         """Remove stale entries. Returns count removed."""
+        ...
+
+
+class AsyncRateLimiterBase(ABC):
+    """Abstract base for async rate limiter backends."""
+
+    @abstractmethod
+    async def check(self, key: str) -> None:
+        ...
+
+    @abstractmethod
+    async def reset(self, key: str) -> None:
+        ...
+
+    @abstractmethod
+    async def cleanup(self) -> int:
         ...
 
 
@@ -205,7 +227,7 @@ class SlidingRateLimiter(RateLimiterBase):
         self._max = max_requests
         self._window = window_seconds
         self._prefix = key_prefix
-        self._log: dict[str, list[float]] = {}
+        self._log: dict[str, collections.deque[float]] = {}
         self._lock = threading.RLock()
         self._last_cleanup = time.time()
         self._MAX_ENTRIES = 10_000
@@ -226,7 +248,9 @@ class SlidingRateLimiter(RateLimiterBase):
             if full_key not in self._log and len(self._log) >= self._MAX_ENTRIES:
                 raise RateLimitExceededError(key, float(self._window))
 
-            timestamps = [t for t in self._log.get(full_key, []) if t > cutoff]
+            timestamps = self._log.setdefault(full_key, collections.deque())
+            while timestamps and timestamps[0] <= cutoff:
+                timestamps.popleft()
 
             if len(timestamps) >= self._max:
                 retry_after = (
@@ -235,7 +259,6 @@ class SlidingRateLimiter(RateLimiterBase):
                 raise RateLimitExceededError(key, max(0.0, retry_after))
 
             timestamps.append(now)
-            self._log[full_key] = timestamps
 
     def reset(self, key: str) -> None:
         full_key = f"{self._prefix}{key}"
@@ -245,12 +268,14 @@ class SlidingRateLimiter(RateLimiterBase):
     def _cleanup_locked(self, now: float) -> int:
         """Must be called with self._lock already held."""
         cutoff = now - self._window
-        empty_keys = [k for k, ts in self._log.items() if not any(t > cutoff for t in ts)]
+        empty_keys = []
+        for k, ts in self._log.items():
+            while ts and ts[0] <= cutoff:
+                ts.popleft()
+            if not ts:
+                empty_keys.append(k)
         for k in empty_keys:
             del self._log[k]
-        # Prune stale timestamps from keys that still have fresh ones
-        for k in self._log:
-            self._log[k] = [t for t in self._log[k] if t > cutoff]
         return len(empty_keys)
 
     def cleanup(self) -> int:
@@ -265,8 +290,17 @@ class SlidingRateLimiter(RateLimiterBase):
         with self._lock:
             now = time.time()
             cutoff = now - self._window
-            timestamps = self._log.get(full_key, [])
-            recent = sum(1 for t in timestamps if t > cutoff)
+            timestamps = self._log.get(full_key)
+            if not timestamps:
+                return self._max
+            # We don't prune here to keep remaining() read-only, but we can binary search or count
+            # since deque doesn't support bisect natively, we just count from the right
+            recent = 0
+            for t in reversed(timestamps):
+                if t > cutoff:
+                    recent += 1
+                else:
+                    break
             return max(0, self._max - recent)
 
 
@@ -340,6 +374,57 @@ class RedisRateLimiter(RateLimiterBase):
 
     def cleanup(self) -> int:
         return 0  # Redis handles TTL automatically
+
+
+class AsyncRedisRateLimiter(AsyncRateLimiterBase):
+    """
+    Native async Fixed-window rate limiter backed by Redis.
+    """
+    _LUA_SCRIPT = """
+    local current = redis.call('INCR', KEYS[1])
+    if tonumber(current) == 1 then
+        redis.call('EXPIRE', KEYS[1], ARGV[1])
+    end
+    local ttl = redis.call('TTL', KEYS[1])
+    return {current, ttl}
+    """
+
+    def __init__(
+        self,
+        async_redis_client: Any,
+        max_requests: int = 10,
+        window_seconds: float = 60.0,
+        key_prefix: str = "uxsp:ratelimit:",
+    ) -> None:
+        if max_requests < 0:
+            raise ValueError("max_requests must be non-negative")
+        if window_seconds <= 0:
+            raise ValueError("window_seconds must be positive")
+
+        self._redis = async_redis_client
+        self._max = max_requests
+        self._window = window_seconds
+        self._prefix = key_prefix
+        self._script = self._redis.register_script(self._LUA_SCRIPT)
+
+    async def check(self, key: str) -> None:
+        full_key = f"{self._prefix}{key}"
+
+        if self._max <= 0:
+            raise RateLimitExceededError(key, float(self._window))
+
+        result = await self._script(keys=[full_key], args=[self._window])
+        count, ttl = int(result[0]), float(result[1])
+
+        if count > self._max:
+            retry_after = max(0.0, ttl) if ttl > 0 else float(self._window)
+            raise RateLimitExceededError(key, retry_after)
+
+    async def reset(self, key: str) -> None:
+        await self._redis.delete(f"{self._prefix}{key}")
+
+    async def cleanup(self) -> int:
+        return 0
 
 
 class RedisSlidingRateLimiter(RateLimiterBase):
@@ -426,6 +511,75 @@ class RedisSlidingRateLimiter(RateLimiterBase):
         return 0
 
 
+class AsyncRedisSlidingRateLimiter(AsyncRateLimiterBase):
+    """
+    Native async Sliding-window rate limiter backed by Redis sorted set.
+    """
+    _LUA_SCRIPT = """
+    local key = KEYS[1]
+    local now = tonumber(ARGV[1])
+    local window = tonumber(ARGV[2])
+    local max_req = tonumber(ARGV[3])
+    local member = ARGV[4]
+
+    local cutoff = now - window
+    redis.call('ZREMRANGEBYSCORE', key, '-inf', cutoff)
+    local count = redis.call('ZCARD', key)
+
+    if count >= max_req then
+        local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
+        if oldest and oldest[2] then
+            return tostring(oldest[2] + window - now)
+        else
+            return tostring(window)
+        end
+    else
+        redis.call('ZADD', key, now, member)
+        redis.call('EXPIRE', key, math.floor(window + 10))
+        return "-1"
+    end
+    """
+
+    def __init__(
+        self,
+        async_redis_client: Any,
+        max_requests: int = 10,
+        window_seconds: float = 60.0,
+        key_prefix: str = "uxsp:sliding:",
+    ) -> None:
+        if max_requests < 0:
+            raise ValueError("max_requests must be non-negative")
+        if window_seconds <= 0:
+            raise ValueError("window_seconds must be positive")
+
+        self._redis = async_redis_client
+        self._max = max_requests
+        self._window = window_seconds
+        self._prefix = key_prefix
+        self._script = self._redis.register_script(self._LUA_SCRIPT)
+
+    def _key(self, key: str) -> str:
+        return f"{self._prefix}{key}"
+
+    async def check(self, key: str) -> None:
+        full_key = self._key(key)
+        now = time.time()
+        member = str(uuid.uuid4())
+
+        result = await self._script(keys=[full_key], args=[now, self._window, self._max, member])
+
+        result_text = result.decode("ascii") if isinstance(result, bytes) else str(result)
+        if result_text != "-1":
+            retry_after = float(result_text)
+            raise RateLimitExceededError(key, max(0.0, retry_after))
+
+    async def reset(self, key: str) -> None:
+        await self._redis.delete(self._key(key))
+
+    async def cleanup(self) -> int:
+        return 0
+
+
 # ─────────────────────────────────────────────
 # GUARDED HANDSHAKE — rate limit + handshake in one call
 # ─────────────────────────────────────────────
@@ -469,5 +623,47 @@ class GuardedHandshake:
             hello=hello,
             initiator_card=initiator_card,
             nonce_store=self._nonce_store,
+            config=config,
+        )
+
+
+class AsyncGuardedHandshake:
+    """
+    Combines async rate limiting with async Handshake response (for async backends).
+    """
+    def __init__(self, limiter: AsyncRateLimiterBase, responder: Identity, nonce_store: AsyncNonceStore | None = None) -> None:
+        self._limiter = limiter
+        self._responder = responder
+        # If no async nonce store is provided, one could use a mock or in-memory one, 
+        # but for simplicity we assume it's provided if needed.
+        self._nonce_store = nonce_store
+
+    async def respond(
+        self, hello: dict[str, Any], initiator_card: PublicCard, config: SessionConfig | None = None
+    ) -> Handshake:
+        await self._limiter.check(initiator_card.entity_id)
+        
+        # We need an async handshake response if the nonce store is async.
+        # However, Handshake.respond is currently synchronous and expects a sync NonceStore.
+        # We can implement a static method or logic here to do it asynchronously.
+        
+        # Verify HELLO format (from Handshake.respond)
+        if not isinstance(hello, dict) or hello.get("v") != 1:
+            raise ValueError("Invalid HELLO format or version.")
+            
+        nonce = hello.get("n")
+        if not isinstance(nonce, str):
+            raise ValueError("Invalid or missing initiator nonce.")
+
+        if self._nonce_store is not None:
+            if await self._nonce_store.is_seen(nonce):
+                raise ValueError("Replay detected: nonce already seen.")
+            await self._nonce_store.mark_used(nonce)
+            
+        return Handshake.respond(
+            responder=self._responder,
+            hello=hello,
+            initiator_card=initiator_card,
+            nonce_store=None,  # We just checked it
             config=config,
         )

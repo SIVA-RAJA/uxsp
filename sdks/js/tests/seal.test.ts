@@ -4,7 +4,7 @@ import { Identity } from "../src/identity.js";
 import { seal, openSeal } from "../src/seal.js";
 import { encodeHex, decodeHex } from "../src/utils.js";
 
-test("seal - Creates valid classical-only envelope when PQC is stubbed", async () => {
+test("seal - Creates valid hybrid envelope when PQC is active", async () => {
     const sender = await Identity.create("Alice");
     const receiver = await Identity.create("Bob");
     
@@ -23,10 +23,10 @@ test("seal - Creates valid classical-only envelope when PQC is stubbed", async (
     assert.ok(envelope.ephemeral_pub);
     assert.ok(envelope.classical_sig);
     
-    // Must be marked as pqc_mode: "none"
-    assert.equal((envelope as any).pqc_mode, "none");
-    assert.equal((envelope as any).pqc_sig, undefined);
-    assert.equal((envelope as any).kem_ciphertext, undefined);
+    // Must be marked with active PQC fields
+    assert.ok((envelope as any).pqc_sig);
+    assert.ok((envelope as any).kem_ciphertext);
+    assert.equal((envelope as any).pqc_mode, undefined);
 
     // Ensure we can open it successfully
     const decrypted = await openSeal(receiver, sender.publicCard(), envelope);

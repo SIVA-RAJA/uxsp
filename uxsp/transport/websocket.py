@@ -148,6 +148,8 @@ class UXSPFrame:
         from_json() enforces the MAX_FRAME_BYTES limit before parsing to guard
         against memory exhaustion attacks from oversized frames.
     """
+    __slots__ = ("type", "payload", "timestamp")
+
     def __init__(
         self, frame_type: FrameType, payload: dict[str, Any] | None = None, ts: int | None = None
     ) -> None:

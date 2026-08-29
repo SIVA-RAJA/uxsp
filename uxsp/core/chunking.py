@@ -103,7 +103,7 @@ def _require_non_negative_int(value: object, field_name: str) -> int:
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class UXSPChunk:
     """
     Represents one chunk of a larger UXSP payload.

@@ -76,7 +76,8 @@ export async function seal(
   // 5. Encrypt plaintext
   const nonce = new Uint8Array(12);
   crypto.getRandomValues(nonce);
-  const ciphertext = await aesGcmEncrypt(symmetricKey, nonce, plaintext);
+  const ad = encodeUTF8(sender.entity_id + recipientCard.entity_id);
+  const ciphertext = await aesGcmEncrypt(symmetricKey, nonce, plaintext, ad);
 
   const envNonceBytes = new Uint8Array(16);
   crypto.getRandomValues(envNonceBytes);
@@ -126,6 +127,9 @@ export async function seal(
   return envelope as UXSPEnvelope;
 }
 
+const seenNonces = new Set<string>();
+const MAX_NONCES = 10000;
+
 /**
  * Open a sealed envelope from a sender.
  */
@@ -139,6 +143,17 @@ export async function openSeal(
   }
   if (envelope.sender_id !== senderCard.entity_id) {
     throw new Error("Envelope sender_id does not match the provided senderCard.");
+  }
+
+  // Replay Protection
+  if (seenNonces.has(envelope.envelope_nonce)) {
+    throw new Error("ReplayError: Envelope replay detected");
+  }
+  seenNonces.add(envelope.envelope_nonce);
+  if (seenNonces.size > MAX_NONCES) {
+    // Basic cleanup: remove the oldest (iterators yield in insertion order)
+    const oldest = seenNonces.keys().next().value;
+    if (oldest) seenNonces.delete(oldest);
   }
 
   const ciphertext = decodeHex(envelope.ciphertext);
@@ -215,6 +230,7 @@ export async function openSeal(
   const symmetricKey = await hkdf(combinedSecret, salt, info, 32);
 
   // Decrypt
-  const plaintext = await aesGcmDecrypt(symmetricKey, nonce, ciphertext);
+  const ad = encodeUTF8(envelope.sender_id + envelope.recipient_id);
+  const plaintext = await aesGcmDecrypt(symmetricKey, nonce, ciphertext, ad);
   return plaintext;
 }

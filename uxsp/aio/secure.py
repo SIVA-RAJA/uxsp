@@ -13,6 +13,8 @@ from typing import Any
 
 from uxsp.core.identity import Identity, PublicCard
 from uxsp.secure._package import SecurePackage
+from uxsp.aio._engine import async_secure_send_payload, async_secure_receive_payload
+from uxsp.aio._types import async_send_file_type, async_receive_file_type
 import uxsp.secure as sync_secure
 
 # ── 1. GLOBAL CONTEXT & IDENTITY (Async Wrappers) ───────────
@@ -43,56 +45,89 @@ async def verify_peer_validity(peer: str | int | PublicCard | Identity) -> None:
 
 # ── 2. DATA TYPE DISPATCHERS ───────────────────────────────
 
-async def SendVideo(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.SendVideo, *args, **kwargs)
-async def ReceiveVideo(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.ReceiveVideo, *args, **kwargs)
+def _remap_kwargs(kwargs, old_key, new_key="file_path_or_bytes"):
+    if old_key in kwargs:
+        kwargs[new_key] = kwargs.pop(old_key)
+    return kwargs
 
-async def SendAudio(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.SendAudio, *args, **kwargs)
-async def ReceiveAudio(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.ReceiveAudio, *args, **kwargs)
+async def SendVideo(*args: Any, **kwargs: Any) -> Any: 
+    return await async_send_file_type(*args, data_type="video", default_filename="video.mp4", default_content_type="video/mp4", **_remap_kwargs(kwargs, "video_path_or_bytes"))
+async def ReceiveVideo(*args: Any, **kwargs: Any) -> Any: 
+    return await async_receive_file_type(*args, expected_type="video", default_filename="received_video.mp4", **kwargs)
 
-async def SendPhoto(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.SendPhoto, *args, **kwargs)
-async def ReceivePhoto(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.ReceivePhoto, *args, **kwargs)
+async def SendAudio(*args: Any, **kwargs: Any) -> Any: 
+    return await async_send_file_type(*args, data_type="audio", default_filename="audio.mp3", default_content_type="audio/mpeg", **_remap_kwargs(kwargs, "audio_path_or_bytes"))
+async def ReceiveAudio(*args: Any, **kwargs: Any) -> Any: 
+    return await async_receive_file_type(*args, expected_type="audio", default_filename="received_audio.mp3", **kwargs)
+
+async def SendPhoto(*args: Any, **kwargs: Any) -> Any: 
+    return await async_send_file_type(*args, data_type="photo", default_filename="photo.jpg", default_content_type="image/jpeg", **_remap_kwargs(kwargs, "photo_path_or_bytes"))
+async def ReceivePhoto(*args: Any, **kwargs: Any) -> Any: 
+    return await async_receive_file_type(*args, expected_type="photo", default_filename="received_photo.jpg", **kwargs)
 
 SendImage = SendPhoto
 ReceiveImage = ReceivePhoto
 
-async def SendText(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.SendText, *args, **kwargs)
-async def ReceiveText(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.ReceiveText, *args, **kwargs)
+async def SendText(*args: Any, **kwargs: Any) -> Any: 
+    return await asyncio.to_thread(sync_secure.SendText, *args, **kwargs)
+async def ReceiveText(*args: Any, **kwargs: Any) -> Any: 
+    return await asyncio.to_thread(sync_secure.ReceiveText, *args, **kwargs)
 
-async def SendDocument(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.SendDocument, *args, **kwargs)
-async def ReceiveDocument(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.ReceiveDocument, *args, **kwargs)
+async def SendDocument(*args: Any, **kwargs: Any) -> Any: 
+    return await async_send_file_type(*args, data_type="document", default_filename="document.docx", default_content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", **_remap_kwargs(kwargs, "doc_path_or_bytes"))
+async def ReceiveDocument(*args: Any, **kwargs: Any) -> Any: 
+    return await async_receive_file_type(*args, expected_type="document", default_filename="received_document.docx", **kwargs)
 
 SendDoc = SendDocument
 ReceiveDoc = ReceiveDocument
 
-async def SendPDF(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.SendPDF, *args, **kwargs)
-async def ReceivePDF(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.ReceivePDF, *args, **kwargs)
+async def SendPDF(*args: Any, **kwargs: Any) -> Any: 
+    return await async_send_file_type(*args, data_type="pdf", default_filename="document.pdf", default_content_type="application/pdf", **_remap_kwargs(kwargs, "pdf_path_or_bytes"))
+async def ReceivePDF(*args: Any, **kwargs: Any) -> Any: 
+    return await async_receive_file_type(*args, expected_type="pdf", default_filename="received_document.pdf", **kwargs)
 
-async def SendFile(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.SendFile, *args, **kwargs)
-async def ReceiveFile(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.ReceiveFile, *args, **kwargs)
+async def SendFile(*args: Any, **kwargs: Any) -> Any: 
+    return await async_send_file_type(*args, data_type="file", default_filename="file.bin", default_content_type="application/octet-stream", **kwargs)
+async def ReceiveFile(*args: Any, **kwargs: Any) -> Any: 
+    return await async_receive_file_type(*args, expected_type="file", default_filename="received_file.bin", **kwargs)
 
-async def SendBinary(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.SendBinary, *args, **kwargs)
-async def ReceiveBinary(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.ReceiveBinary, *args, **kwargs)
+async def SendBinary(*args: Any, **kwargs: Any) -> Any: 
+    return await asyncio.to_thread(sync_secure.SendBinary, *args, **kwargs)
+async def ReceiveBinary(*args: Any, **kwargs: Any) -> Any: 
+    return await asyncio.to_thread(sync_secure.ReceiveBinary, *args, **kwargs)
 
-async def SendJSON(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.SendJSON, *args, **kwargs)
-async def ReceiveJSON(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.ReceiveJSON, *args, **kwargs)
+async def SendJSON(*args: Any, **kwargs: Any) -> Any: 
+    return await asyncio.to_thread(sync_secure.SendJSON, *args, **kwargs)
+async def ReceiveJSON(*args: Any, **kwargs: Any) -> Any: 
+    return await asyncio.to_thread(sync_secure.ReceiveJSON, *args, **kwargs)
 
-async def SendHTML(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.SendHTML, *args, **kwargs)
-async def ReceiveHTML(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.ReceiveHTML, *args, **kwargs)
+async def SendHTML(*args: Any, **kwargs: Any) -> Any: 
+    return await asyncio.to_thread(sync_secure.SendHTML, *args, **kwargs)
+async def ReceiveHTML(*args: Any, **kwargs: Any) -> Any: 
+    return await asyncio.to_thread(sync_secure.ReceiveHTML, *args, **kwargs)
 
-async def SendArchive(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.SendArchive, *args, **kwargs)
-async def ReceiveArchive(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.ReceiveArchive, *args, **kwargs)
+async def SendArchive(*args: Any, **kwargs: Any) -> Any: 
+    return await async_send_file_type(*args, data_type="archive", default_filename="archive.zip", default_content_type="application/zip", **_remap_kwargs(kwargs, "archive_path_or_bytes"))
+async def ReceiveArchive(*args: Any, **kwargs: Any) -> Any: 
+    return await async_receive_file_type(*args, expected_type="archive", default_filename="received_archive.zip", **kwargs)
 
 SendZip = SendArchive
 ReceiveZip = ReceiveArchive
 
-async def SendVoice(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.SendVoice, *args, **kwargs)
-async def ReceiveVoice(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.ReceiveVoice, *args, **kwargs)
+async def SendVoice(*args: Any, **kwargs: Any) -> Any: 
+    return await async_send_file_type(*args, data_type="voice", default_filename="voice.m4a", default_content_type="audio/mp4", **_remap_kwargs(kwargs, "voice_path_or_bytes"))
+async def ReceiveVoice(*args: Any, **kwargs: Any) -> Any: 
+    return await async_receive_file_type(*args, expected_type="voice", default_filename="received_voice.m4a", **kwargs)
 
-async def SendLocation(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.SendLocation, *args, **kwargs)
-async def ReceiveLocation(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.ReceiveLocation, *args, **kwargs)
+async def SendLocation(*args: Any, **kwargs: Any) -> Any: 
+    return await asyncio.to_thread(sync_secure.SendLocation, *args, **kwargs)
+async def ReceiveLocation(*args: Any, **kwargs: Any) -> Any: 
+    return await asyncio.to_thread(sync_secure.ReceiveLocation, *args, **kwargs)
 
-async def SendContact(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.SendContact, *args, **kwargs)
-async def ReceiveContact(*args: Any, **kwargs: Any) -> Any: return await asyncio.to_thread(sync_secure.ReceiveContact, *args, **kwargs)
+async def SendContact(*args: Any, **kwargs: Any) -> Any: 
+    return await asyncio.to_thread(sync_secure.SendContact, *args, **kwargs)
+async def ReceiveContact(*args: Any, **kwargs: Any) -> Any: 
+    return await asyncio.to_thread(sync_secure.ReceiveContact, *args, **kwargs)
 
 # ── 3. POLYMORPHIC DISPATCHERS ─────────────────────────────
 

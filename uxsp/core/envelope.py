@@ -116,6 +116,20 @@ class Envelope:
                     single envelope (prefer chunking instead).
     """
     MAX_BYTES: ClassVar[int] = _DEFAULT_MAX_BYTES
+    __slots__ = (
+        "version",
+        "sender_id",
+        "recipient_id",
+        "timestamp",
+        "envelope_nonce",
+        "ciphertext",
+        "nonce",
+        "ephemeral_pub",
+        "kem_ciphertext",
+        "classical_sig",
+        "pqc_sig",
+        "_size_bytes_cache",
+    )
     _size_bytes_cache: int | None
 
     version: str

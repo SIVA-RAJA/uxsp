@@ -34,6 +34,13 @@ export class Identity {
   }
 
   static async create(name: string, role: string = "CLIENT"): Promise<Identity> {
+    if (!name || typeof name !== "string" || name.trim() === "") {
+      throw new TypeError("Identity name must be a non-empty string.");
+    }
+    if (!role || typeof role !== "string" || role.trim() === "") {
+      throw new TypeError("Identity role must be a non-empty string.");
+    }
+
     const exchange = await generateX25519KeyPair();
     const signing = await generateEd25519KeyPair();
     const kem = await generateMLKEMKeyPair();

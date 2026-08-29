@@ -23,6 +23,7 @@ def SendLiveSession(
     session = LiveSession.generate()
     meta = metadata or {}
     meta["uxsp_live_exchange"] = True
+    meta["session_id"] = session.session_id_bytes.hex()
 
     pkg = _secure_send_payload(
         receiver_id=receiver_id,
@@ -52,16 +53,20 @@ def ReceiveLiveSession(
     """
     from uxsp.core.live import LiveSession
 
+    pkg = _resolve_package_input(package)
     key_bytes = _secure_receive_payload(
         sender_id=sender_id,
-        package_input=package,
+        package_input=pkg,
         sender=sender,
         sender_card=sender_card,
         receiver=receiver,
         receiver_identity=receiver_identity,
         expected_type="live_session",
     )
-    return LiveSession(key=key_bytes)
+    meta = pkg.metadata or {}
+    session_id_hex = meta.get("session_id")
+    session_id = bytes.fromhex(session_id_hex) if session_id_hex else None
+    return LiveSession(key=key_bytes, session_id=session_id)
 
 
 def SendLiveVoiceCall(
@@ -84,6 +89,7 @@ def SendLiveVoiceCall(
     session = LiveVoiceSession.generate_voice(codec=codec, sample_rate=sample_rate, channels=channels)
     meta = metadata or {}
     meta["uxsp_live_voice_exchange"] = True
+    meta["session_id"] = session.session_id_bytes.hex()
     meta["codec"] = codec
     meta["sample_rate"] = sample_rate
     meta["channels"] = channels
@@ -127,11 +133,13 @@ def ReceiveLiveVoiceCall(
         expected_type="live_voice_session",
     )
     meta = pkg.metadata or {}
+    session_id_hex = meta.get("session_id")
+    session_id = bytes.fromhex(session_id_hex) if session_id_hex else None
     codec = meta.get("codec", "opus")
     sample_rate = meta.get("sample_rate", 48000)
     channels = meta.get("channels", 1)
 
-    return LiveVoiceSession(key=key_bytes, codec=codec, sample_rate=sample_rate, channels=channels)
+    return LiveVoiceSession(key=key_bytes, session_id=session_id, codec=codec, sample_rate=sample_rate, channels=channels)
 
 
 SendLiveVoice = SendLiveVoiceCall

@@ -156,6 +156,11 @@ class TestEnvelopeInit:
         # ClassVar is set at class level
         assert Envelope.MAX_BYTES == _DEFAULT_MAX_BYTES
 
+    def test_has_slots_no_dict(self):
+        """Verifies that Envelope uses __slots__ and has no __dict__."""
+        e = _make_envelope()
+        assert not hasattr(e, "__dict__")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ENVELOPE.__setattr__  (Lines 110–115)
@@ -184,14 +189,7 @@ class TestSetAttr:
         e._size_bytes_cache = 99   # name == "_size_bytes_cache" branch
         assert e._size_bytes_cache == 99
 
-    # Branch 3: non-immutable, non-cache name → clears cache first, then sets
-    def test_custom_attribute_clears_cache(self):
-        e = _make_envelope()
-        _ = e.size_bytes                      # populate cache
-        assert e._size_bytes_cache is not None
-        e._custom_field = "hello"             # triggers cache-clear branch
-        assert e._size_bytes_cache is None    # cache wiped
-        assert e._custom_field == "hello"     # then stored
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────

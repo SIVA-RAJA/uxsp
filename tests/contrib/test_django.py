@@ -102,7 +102,7 @@ def test_django_middleware_keystore_and_text_response(server_identity, client_id
         sender=client_identity,
     )
 
-    request = factory.post("/api/text", data=pkg.to_json(), content_type="application/json")
+    request = factory.post("/api/text", data=pkg.to_json(), content_type="application/json", HTTP_X_UXSP_PACKAGE="1")
     response = middleware(request)
     assert response.status_code == 200
     assert response["X-UXSP-Package"] == "1"
@@ -247,7 +247,7 @@ def test_django_middleware_malformed_package(server_identity):
     factory = RequestFactory()
 
     # Invalid json body test
-    req_bad_json = factory.post("/api/echo", data="not json", content_type="text/plain", HTTP_X_UXSP_PACKAGE="1")
+    req_bad_json = factory.post("/api/echo", data="{not json}", content_type="text/plain", HTTP_X_UXSP_PACKAGE="1")
     res_bad_json = middleware(req_bad_json)
     assert res_bad_json.status_code == 200
 
@@ -263,6 +263,7 @@ def test_django_middleware_malformed_package(server_identity):
         "/api/echo",
         data=json.dumps(fake_pkg),
         content_type="application/json",
+        HTTP_X_UXSP_PACKAGE="1",
     )
 
     response = middleware(request)

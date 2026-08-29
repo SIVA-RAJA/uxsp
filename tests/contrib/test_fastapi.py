@@ -266,7 +266,7 @@ def test_fastapi_middleware_malformed_package_and_invalid_body(server_identity):
     test_client = TestClient(app)
 
     # Invalid json body test
-    res_bad_json = test_client.post("/api/echo", content=b"not json", headers={"X-UXSP-Package": "1"})
+    res_bad_json = test_client.post("/api/echo", content=b"{not json}", headers={"X-UXSP-Package": "1"})
     assert res_bad_json.status_code == 200
 
     fake_pkg = {
@@ -277,7 +277,7 @@ def test_fastapi_middleware_malformed_package_and_invalid_body(server_identity):
         "envelope": {"magic": "UXSP-INVALID", "ciphertext": "bad"},
     }
 
-    response = test_client.post("/api/echo", json=fake_pkg)
+    response = test_client.post("/api/echo", json=fake_pkg, headers={"X-UXSP-Package": "1"})
     assert response.status_code == 400
     assert "Decryption Failed" in response.json()["error"]
 

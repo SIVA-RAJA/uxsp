@@ -59,6 +59,8 @@ from uxsp.crypto.hybrid import (
 )
 from uxsp.crypto.kdf import derive_key
 
+SUPPORTED_VERSIONS = ["1"]
+
 
 class ExchangeResult(TypedDict):
     ephemeral_pub: bytes
@@ -116,7 +118,7 @@ def _make_hello(
 
     signable = bind_fields(
         b"UXSP-HELLO",
-        b"1",
+        ",".join(SUPPORTED_VERSIONS).encode(),
         session_id.encode(),
         initiator.entity_id.encode(),
         responder_card.entity_id.encode(),
@@ -129,7 +131,7 @@ def _make_hello(
 
     hello: dict[str, Any] = {
         "type": "UXSP-HELLO",
-        "version": "1",
+        "supported_versions": SUPPORTED_VERSIONS,
         "session_id": session_id,
         "initiator_id": initiator.entity_id,
         "responder_id": responder_card.entity_id,
@@ -144,12 +146,12 @@ def _make_hello(
 
 def _verify_hello_signature(
     hello: dict[str, Any], initiator_card: PublicCard, responder: Identity, max_age: int = 30
-) -> bytes:
-    """Step 1: Check signature and metadata. Returns the signable bytes for later."""
+) -> tuple[bytes, str]:
+    """Step 1: Check signature and metadata. Returns the signable bytes and negotiated version."""
 
     _HELLO_REQUIRED = (
         "type",
-        "version",
+        "supported_versions",
         "session_id",
         "initiator_id",
         "responder_id",
@@ -196,15 +198,22 @@ def _verify_hello_signature(
             f"not for this responder '{responder.entity_id[:8]}...'. "
             f"Possible misdirected or replayed handshake."
         )
-    if hello.get("version") != "1":
-        raise HandshakeAuthError(
-            f"Unsupported hello version '{hello.get('version')}'. Expected '1'."
-        )
+    client_versions = hello.get("supported_versions")
+    if not isinstance(client_versions, list) or not client_versions:
+        raise HandshakeAuthError("HelloMessage missing or invalid 'supported_versions'.")
+    
+    common = set(SUPPORTED_VERSIONS).intersection(client_versions)
+    if not common:
+        raise HandshakeAuthError(f"No common protocol version supported. Peer supports: {client_versions}")
+    try:
+        negotiated_version = max(common, key=int)
+    except ValueError:
+        negotiated_version = max(common)
 
     try:
         signable = bind_fields(
             b"UXSP-HELLO",
-            str(hello["version"]).encode(),
+            ",".join(hello["supported_versions"]).encode(),
             str(hello["session_id"]).encode(),
             str(hello["initiator_id"]).encode(),
             str(hello["responder_id"]).encode(),
@@ -231,7 +240,7 @@ def _verify_hello_signature(
             "HelloMessage signature invalid. Initiator identity could not be verified."
         )
 
-    return signable
+    return signable, negotiated_version
 
 
 def _derive_hello_secret(hello: dict[str, Any], responder: Identity) -> bytes:
@@ -249,6 +258,7 @@ def _make_ack(
     initiator_id: str,
     shared_secret_A: bytes,
     initiator_card: PublicCard,
+    negotiated_version: str,
 ) -> tuple[dict[str, Any], ExchangeResult]:
     """
     Build the ACK message for the responder side of the handshake.
@@ -269,7 +279,7 @@ def _make_ack(
 
     signable = bind_fields(
         b"UXSP-ACK",
-        b"1",
+        negotiated_version.encode(),
         session_id.encode(),
         responder.entity_id.encode(),
         initiator_id.encode(),
@@ -283,7 +293,7 @@ def _make_ack(
 
     ack = {
         "type": "UXSP-ACK",
-        "version": "1",
+        "version": negotiated_version,
         "session_id": session_id,
         "responder_id": responder.entity_id,
         "initiator_id": initiator_id,
@@ -343,8 +353,9 @@ def _verify_ack_signature(
 
     if age < -max_age or age > max_age:
         raise HandshakeExpiredError(f"AckMessage age {age}s is out of bounds. Maximum: {max_age}s.")
-    if ack.get("version") != "1":
-        raise HandshakeAuthError(f"Unsupported ack version '{ack.get('version')}'. Expected '1'.")
+    version = ack.get("version")
+    if version not in SUPPORTED_VERSIONS:
+        raise HandshakeAuthError(f"Unsupported ack version '{version}'.")
 
     try:
         signable = bind_fields(
@@ -479,7 +490,7 @@ class Handshake:
         except (ValueError, TypeError, AttributeError):
             raise HandshakeAuthError(f"Invalid or malformed session_id: {hs._session_id}") from None
 
-        _signable = _verify_hello_signature(hello, initiator_card, responder)
+        _signable, negotiated_version = _verify_hello_signature(hello, initiator_card, responder)
 
         if not nonce_store.mark_used(f"hello:{hello['session_id']}", ttl_seconds=90):
             raise HandshakeExpiredError("Replay attack detected: hello message already processed.")
@@ -487,7 +498,7 @@ class Handshake:
         shared_secret_A = _derive_hello_secret(hello, responder)
 
         ack_msg, resp_exchange = _make_ack(
-            responder, hello["session_id"], hello["initiator_id"], shared_secret_A, initiator_card
+            responder, hello["session_id"], hello["initiator_id"], shared_secret_A, initiator_card, negotiated_version
         )
         hs._ack_msg = ack_msg
 

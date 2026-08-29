@@ -57,6 +57,49 @@ def test_livesession_tamper_ciphertext():
     with pytest.raises(ValueError, match="Decryption failed"):
         session.decrypt_frame(bytes(tampered))
 
+def test_livesession_ratcheting():
+    session1 = LiveSession.generate()
+    session2 = LiveSession(session1.key, session_id=session1.session_id_bytes)
+    
+    session1._frame_count = 65535
+    session2._frame_count = 65535
+    
+    frame = b"hello ratchet"
+    enc = session1.encrypt_frame(frame)
+    assert session1._frame_count == 0
+    
+    dec, _ = session2.decrypt_frame(enc)
+    assert session2._frame_count == 0
+    assert dec == frame
+    assert session1.key == session2.key
+
+def test_livesession_replay_protection():
+    session = LiveSession.generate()
+    frame = b"hello replay"
+    enc = session.encrypt_frame(frame)
+    
+    dec, _ = session.decrypt_frame(enc, expected_seq=5)
+    assert dec == frame
+    assert session._last_seq == 5
+    
+    from uxsp.core.replay import ReplayError
+    with pytest.raises(ReplayError, match="Frame replay detected"):
+        session.decrypt_frame(enc, expected_seq=5)
+        
+    with pytest.raises(ReplayError, match="Frame replay detected"):
+        session.decrypt_frame(enc, expected_seq=4)
+
+def test_livesession_session_binding():
+    key = b"A" * 32
+    session1 = LiveSession(key, session_id=b"session1")
+    session2 = LiveSession(key, session_id=b"session2")
+    
+    frame = b"hello binding"
+    enc = session1.encrypt_frame(frame)
+    
+    with pytest.raises(ValueError, match="Decryption failed"):
+        session2.decrypt_frame(enc)
+
 
 def test_livesession_exceptions():
     # Line 32: bad key size
@@ -75,10 +118,12 @@ def test_livesession_exceptions():
         session.decrypt_frame(b"\x00")
 
     # Line 83: extract_metadata < 2 bytes
-    assert LiveSession.extract_metadata(b"\x00") == b""
+    with pytest.raises(ValueError, match="too short to contain metadata length"):
+        LiveSession.extract_metadata(b"\x00")
 
     # Line 86: extract_metadata length header larger than buffer
-    assert LiveSession.extract_metadata(b"\xff\xff\x00") == b""
+    with pytest.raises(ValueError, match="too short to contain full metadata"):
+        LiveSession.extract_metadata(b"\xff\xff\x00")
 
 
 def test_livevoicesession_voice_frames():

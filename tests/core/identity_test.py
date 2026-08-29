@@ -350,6 +350,16 @@ class TestIdentitySealFor:
         MOCK_ENVELOPE_CLS.from_dict.assert_called_once_with({"sealed": True})
         assert result == MOCK_ENVELOPE_CLS.from_dict.return_value
 
+    def test_seal_for_revoked_card_raises(self):
+        m = _import()
+        sender   = m.Identity.create("Alice", "ADMIN")
+        receiver = m.Identity.create("Bob",   "USER")
+        r_card   = receiver.public_card()
+        r_card.is_revoked = True
+
+        with pytest.raises(m.CardRevokedError, match="Cannot seal for revoked card"):
+            sender.seal_for(b"hello", r_card)
+
 
 # ══════════════════════════════════════════════════════════════════
 # 7. Identity.open_from
@@ -449,6 +459,17 @@ class TestIdentityOpenFrom:
             max_age_seconds       = 60,
             clock_skew_seconds    = 10,
         )
+
+    def test_open_from_revoked_card_raises(self):
+        m, sender, receiver = self._make_two()
+        guard = MagicMock()
+        env_dict = self._fake_envelope_dict(sender.entity_id, receiver.entity_id)
+
+        s_card = sender.public_card()
+        s_card.is_revoked = True
+
+        with pytest.raises(m.CardRevokedError, match="Cannot open from revoked card"):
+            receiver.open_from(env_dict, s_card, guard)
 
 
 # ══════════════════════════════════════════════════════════════════

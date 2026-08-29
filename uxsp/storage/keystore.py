@@ -21,6 +21,9 @@ What this file does:
         RedisKeyStore     — Redis strings with optional TTL (fast cache).
         PostgresKeyStore  — PostgreSQL JSONB table (durable source of truth).
         CachingKeyStore   — Redis in front of Postgres (recommended production).
+        
+        AsyncKeyStore     — Async ABC for async drivers.
+        AsyncRedisKeyStore— Native async Redis backend.
 
     Errors:
         KeyStoreError         — Base.
@@ -210,6 +213,43 @@ class KeyStore(ABC):
 
     def __contains__(self, entity_id: str) -> bool:
         return self.has(entity_id)
+
+
+class AsyncKeyStore(ABC):
+    """
+    Abstract base class for all async UXSP key stores.
+    """
+    @abstractmethod
+    async def put(self, card: CardType, overwrite: bool = True) -> None: ...
+    @abstractmethod
+    async def get(self, entity_id: str) -> CardType | None: ...
+    @abstractmethod
+    async def delete(self, entity_id: str) -> bool: ...
+    @abstractmethod
+    async def list_ids(self) -> list[str]: ...
+
+    async def require(self, entity_id: str) -> CardType:
+        card = await self.get(entity_id)
+        if card is None:
+            raise CardNotFoundError(
+                f"No card found for entity '{entity_id}'. "
+                f"The entity may not have registered, or the card "
+                f"may have been revoked."
+            )
+        return card
+
+    async def public_card(self, entity_id: str) -> PublicCard:
+        card = await self.require(entity_id)
+        if isinstance(card, SignedCard):
+            return card.card
+        return card
+
+    async def has(self, entity_id: str) -> bool:
+        return (await self.get(entity_id)) is not None
+
+    async def put_many(self, cards: list[CardType], overwrite: bool = True) -> None:
+        for card in cards:
+            await self.put(card, overwrite=overwrite)
 
 
 # ─────────────────────────────────────────────
@@ -501,6 +541,78 @@ class RedisKeyStore(KeyStore):
             raise
         except Exception as e:
             raise KeyStoreBackendError(f"Redis keystore unavailable: {e}") from e
+
+
+class AsyncRedisKeyStore(AsyncKeyStore):
+    """
+    Native Async Redis backend for AsyncKeyStore.
+    """
+    def __init__(self, async_redis_client: Any, key_prefix: str = "uxsp:cards:", ttl: int = 3600) -> None:
+        self._redis = async_redis_client
+        self._prefix = key_prefix
+        self._ttl = ttl
+
+    def _key(self, entity_id: str) -> str:
+        return f"{self._prefix}{entity_id}"
+
+    async def put(self, card: CardType, overwrite: bool = True) -> None:
+        eid = _entity_id(card)
+        rkey = self._key(eid)
+        try:
+            raw = json.dumps(_serialise_card(card))
+            if not overwrite:
+                kwargs: dict[str, Any] = {"nx": True}
+                if self._ttl > 0:
+                    kwargs["ex"] = self._ttl
+                result = await self._redis.set(rkey, raw, **kwargs)
+                if not result:
+                    raise DuplicateCardError(
+                        f"Card for '{eid[:8]}...' already exists and overwrite=False."
+                    )
+            else:
+                if self._ttl > 0:
+                    await self._redis.set(rkey, raw, ex=self._ttl)
+                else:
+                    await self._redis.set(rkey, raw)
+        except DuplicateCardError:
+            raise
+        except Exception as e:
+            raise KeyStoreBackendError(f"Async Redis keystore unavailable: {e}") from e
+
+    async def get(self, entity_id: str) -> CardType | None:
+        try:
+            raw = await self._redis.get(self._key(entity_id))
+            if raw is None:
+                return None
+            return _deserialise_card(json.loads(raw))
+        except KeyStoreError:
+            raise
+        except Exception as e:
+            raise KeyStoreBackendError(f"Async Redis keystore unavailable: {e}") from e
+
+    async def delete(self, entity_id: str) -> bool:
+        try:
+            return bool(await self._redis.delete(self._key(entity_id)))
+        except KeyStoreError:
+            raise
+        except Exception as e:
+            raise KeyStoreBackendError(f"Async Redis keystore unavailable: {e}") from e
+
+    async def list_ids(self) -> list[str]:
+        try:
+            prefix = self._prefix
+            keys: list[str | bytes] = []
+            cursor: int | bytes = 0
+            while True:
+                cursor, batch = await self._redis.scan(cursor, match=f"{prefix}*", count=100)
+                keys.extend(batch)
+                if cursor == 0 or cursor == b"0":
+                    break
+            return [(k.decode() if isinstance(k, bytes) else k).removeprefix(prefix) for k in keys]
+        except KeyStoreError:
+            raise
+        except Exception as e:
+            raise KeyStoreBackendError(f"Async Redis keystore unavailable: {e}") from e
 
 
 # ─────────────────────────────────────────────

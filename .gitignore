@@ -112,8 +112,9 @@ Thumbs.db
 node_modules/
 sdks/js/dist/
 sdks/js/node_modules/
-package-lock.json
-yarn.lock
+# Keep package-lock.json tracked for reproducible builds
+# package-lock.json
+# yarn.lock
 pnpm-lock.yaml
 
 # UXSP Project Specific
@@ -124,3 +125,4 @@ local_keys/
 .antigravity/
 
 out.txt
+coverage_report.txt
