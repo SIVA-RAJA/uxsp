@@ -875,6 +875,7 @@ class TestCardSignable:
                 "pqc_sig_pub":  b"pp",
             },
         )
+        card.key_version = 1
         _HYBRID.bind_fields.reset_mock()
         _HYBRID.bind_fields.return_value = b"result"
 
@@ -890,6 +891,7 @@ class TestCardSignable:
             b"kp",
             b"sp",
             b"pp",
+            b"1",
             b"100",
             b"200",
             b"cid",

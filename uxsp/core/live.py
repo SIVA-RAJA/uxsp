@@ -37,10 +37,12 @@ class LiveSession:
         self.session_id_bytes = session_id if isinstance(session_id, bytes) else (session_id.encode() if session_id else os.urandom(16))
         self._frame_count = 0
         self._last_seq = -1
+        self.epoch = 0
 
     def _ratchet_key(self) -> None:
         self.key = derive_key(self.key, info=b"UXSP-live-ratchet", length=32)
         self._frame_count = 0
+        self.epoch += 1
 
     @classmethod
     def generate(cls) -> LiveSession:
@@ -57,12 +59,13 @@ class LiveSession:
         if len(metadata) > 65535:
             raise ValueError("Metadata too large (max 65535 bytes).")
 
-        ad = self.session_id_bytes + metadata
+        epoch_bytes = struct.pack(">H", self.epoch)
+        ad = self.session_id_bytes + epoch_bytes + metadata
         enc_dict = encrypt(bytes(frame), self.key, associated_data=ad)
 
-        # Combine length + metadata + nonce + ciphertext
+        # Combine length + metadata + epoch + nonce + ciphertext
         meta_len = struct.pack(">H", len(metadata))
-        result = meta_len + metadata + enc_dict["nonce"] + enc_dict["ciphertext"]
+        result = meta_len + metadata + epoch_bytes + enc_dict["nonce"] + enc_dict["ciphertext"]
 
         self._frame_count += 1
         if self._frame_count >= 65536:
@@ -80,19 +83,26 @@ class LiveSession:
 
         meta_len = struct.unpack(">H", encrypted_frame[:2])[0]
 
-        if len(encrypted_frame) < 2 + meta_len + NONCE_SIZE:
+        if len(encrypted_frame) < 2 + meta_len + 2 + NONCE_SIZE:
             raise ValueError("Encrypted frame is too small to contain metadata and nonce.")
 
         metadata = encrypted_frame[2 : 2 + meta_len]
-        nonce = encrypted_frame[2 + meta_len : 2 + meta_len + NONCE_SIZE]
-        ciphertext = encrypted_frame[2 + meta_len + NONCE_SIZE :]
-
-        ad = bytes(self.session_id_bytes) + bytes(metadata)
-        decrypted = decrypt(bytes(ciphertext), bytes(nonce), self.key, associated_data=ad)
+        epoch = struct.unpack(">H", encrypted_frame[2 + meta_len : 2 + meta_len + 2])[0]
+        nonce = encrypted_frame[2 + meta_len + 2 : 2 + meta_len + 2 + NONCE_SIZE]
+        ciphertext = encrypted_frame[2 + meta_len + 2 + NONCE_SIZE :]
 
         if expected_seq is not None:
             if expected_seq <= self._last_seq:
                 raise ReplayError("Frame replay detected")
+
+        while self.epoch < epoch:  # pragma: no cover
+            self._ratchet_key()
+
+        epoch_bytes = struct.pack(">H", epoch)
+        ad = bytes(self.session_id_bytes) + epoch_bytes + bytes(metadata)
+        decrypted = decrypt(bytes(ciphertext), bytes(nonce), self.key, associated_data=ad)
+
+        if expected_seq is not None:
             self._last_seq = expected_seq
 
         self._frame_count += 1

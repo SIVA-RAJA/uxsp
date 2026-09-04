@@ -639,6 +639,7 @@ def _card_signable(card: PublicCard, not_before: int, not_after: int, cert_id: s
         card.public_keys["kem_pub"],
         card.public_keys["signing_pub"],
         card.public_keys["pqc_sig_pub"],
+        str(card.key_version).encode(),
         str(not_before).encode(),
         str(not_after).encode(),
         cert_id.encode(),

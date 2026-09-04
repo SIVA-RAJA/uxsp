@@ -141,9 +141,13 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
             try:
                 data_dict = json.loads(body_bytes.decode("utf-8"))
                 if isinstance(data_dict, dict) and "sender_id" in data_dict and ("envelope" in data_dict or "chunks" in data_dict):
-                    package = SecurePackage.from_dict(data_dict)
-                    is_uxsp_request = True
-            except Exception:
+                    try:
+                        package = SecurePackage.from_dict(data_dict)
+                        is_uxsp_request = True
+                    except Exception as e:  # pragma: no cover
+                        logger.error("Malformed UXSP request: %s", e, exc_info=True)
+                        return JSONResponse(status_code=400, content={"error": "Malformed UXSP request", "detail": str(e)})
+            except (json.JSONDecodeError, KeyError):
                 pass
 
         server_identity = self._get_identity()
@@ -171,7 +175,7 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
                 request.state.uxsp_encrypted = True
                 request.state.uxsp_payload = parsed_payload
                 request.state.uxsp_sender_id = sender_id
-                request.state.uxsp_sender_card = sender_card or resolve_peer_card(self.keystore, sender_id)
+                request.state.uxsp_sender_card = sender_card
 
                 # Mutate request body so endpoint can read decrypted json
                 if isinstance(parsed_payload, (dict, list)):

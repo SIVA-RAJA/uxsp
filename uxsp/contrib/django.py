@@ -126,9 +126,13 @@ class UXSPDjangoMiddleware:
             try:
                 data_dict = json.loads(body_bytes.decode("utf-8"))
                 if isinstance(data_dict, dict) and "sender_id" in data_dict and ("envelope" in data_dict or "chunks" in data_dict):
-                    package = SecurePackage.from_dict(data_dict)
-                    is_uxsp_request = True
-            except Exception:
+                    try:
+                        package = SecurePackage.from_dict(data_dict)
+                        is_uxsp_request = True
+                    except Exception as e:  # pragma: no cover
+                        logger.error("Malformed UXSP request: %s", e, exc_info=True)
+                        return JsonResponse({"error": "Malformed UXSP request", "detail": str(e)}, status=400)
+            except (json.JSONDecodeError, KeyError):
                 pass
 
         server_identity = self._get_identity()
@@ -155,7 +159,7 @@ class UXSPDjangoMiddleware:
                 request.uxsp_encrypted = True
                 request.uxsp_payload = parsed_payload
                 request.uxsp_sender_id = sender_id
-                request.uxsp_sender_card = sender_card or resolve_peer_card(self.keystore, sender_id)
+                request.uxsp_sender_card = sender_card
 
                 if isinstance(parsed_payload, (dict, list)):
                     request._body = json.dumps(parsed_payload).encode("utf-8")

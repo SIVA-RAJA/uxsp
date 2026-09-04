@@ -458,6 +458,7 @@ class Identity:
         try:
             with os.fdopen(tmp_fd, "w") as f:
                 json.dump(payload, f, indent=2)
+            os.chmod(tmp_path, 0o600)
             os.replace(tmp_path, path)
         except BaseException:
             with contextlib.suppress(OSError):
@@ -497,7 +498,7 @@ class Identity:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Identity):
             return NotImplemented
-        return self.entity_id == other.entity_id
+        return self.entity_id == other.entity_id and self.key_version == other.key_version
 
 
 # ─────────────────────────────────────────────
@@ -656,4 +657,5 @@ class PublicCard:
             self.entity_id == other.entity_id
             and self.key_version == other.key_version
             and self.is_revoked == other.is_revoked
+            and self.public_keys == other.public_keys
         )

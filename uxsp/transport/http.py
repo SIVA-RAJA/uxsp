@@ -345,10 +345,10 @@ def _assert_headers_match_envelope(
     UXSPHTTPError if any field does not match.
     """
     if envelope.sender_id != sender_id:
-        raise UXSPHTTPError("UXSP sender header does not match envelope sender_id.")
+        raise UXSPHTTPError("UXSP sender header does not match envelope sender_id. The signed body is authoritative; headers may have been tampered.")
     if envelope.recipient_id != recipient_id:
-        raise UXSPHTTPError("UXSP recipient header does not match envelope recipient_id.")
+        raise UXSPHTTPError("UXSP recipient header does not match envelope recipient_id. The signed body is authoritative; headers may have been tampered.")
     if str(envelope.timestamp) != timestamp:
-        raise UXSPHTTPError("UXSP timestamp header does not match envelope timestamp.")
+        raise UXSPHTTPError("UXSP timestamp header does not match envelope timestamp. The signed body is authoritative; headers may have been tampered.")
     if envelope.envelope_nonce != envelope_nonce:
-        raise UXSPHTTPError("UXSP nonce header does not match envelope envelope_nonce.")
+        raise UXSPHTTPError("UXSP nonce header does not match envelope envelope_nonce. The signed body is authoritative; headers may have been tampered.")

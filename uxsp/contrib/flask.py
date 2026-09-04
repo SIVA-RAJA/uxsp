@@ -141,9 +141,13 @@ class UXSPFlaskMiddleware:
             try:
                 data_dict = json.loads(body_bytes.decode("utf-8"))
                 if isinstance(data_dict, dict) and "sender_id" in data_dict and ("envelope" in data_dict or "chunks" in data_dict):
-                    package = SecurePackage.from_dict(data_dict)
-                    is_uxsp_request = True
-            except Exception:
+                    try:
+                        package = SecurePackage.from_dict(data_dict)
+                        is_uxsp_request = True
+                    except Exception as e:  # pragma: no cover
+                        logger.error("Malformed UXSP request: %s", e, exc_info=True)
+                        return jsonify({"error": "Malformed UXSP request", "detail": str(e)}), 400
+            except (json.JSONDecodeError, KeyError):
                 pass
 
         server_identity = self._get_identity()
@@ -170,7 +174,7 @@ class UXSPFlaskMiddleware:
                 g.uxsp_encrypted = True
                 g.uxsp_payload = parsed_payload
                 g.uxsp_sender_id = sender_id
-                g.uxsp_sender_card = sender_card or resolve_peer_card(self.keystore, sender_id)
+                g.uxsp_sender_card = sender_card
             except Exception as e:
                 logger.error("UXSP decryption failed: %s", e, exc_info=True)
                 return jsonify({"error": "UXSP Decryption Failed"}), 400

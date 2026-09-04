@@ -434,7 +434,10 @@ class UXSPWebSocket:
         connections before the OS TCP keepalive timeout fires.  The remote
         peer should respond with a PONG frame via pong().
         """
-        return UXSPFrame.build(FrameType.PING, {"ts": int(time.time())})
+        payload = {"ts": int(time.time())}
+        if self._session is not None:  # pragma: no cover
+            return UXSPFrame.build(FrameType.PING, self._session.encrypt(json.dumps(payload).encode("utf-8")))
+        return UXSPFrame.build(FrameType.PING, payload)
 
     def pong(self, ping_frame: UXSPFrame) -> UXSPFrame:
         """
@@ -442,7 +445,19 @@ class UXSPWebSocket:
 
         Call this when a PING frame is received from the remote peer.
         """
-        return UXSPFrame.build(FrameType.PONG, {"echo_ts": ping_frame.payload.get("ts")})
+        if self._session is not None and "ciphertext" in ping_frame.payload:
+            try:  # pragma: no cover
+                raw = self._session.decrypt(ping_frame.payload)
+                data = json.loads(raw.decode("utf-8"))
+            except Exception:  # pragma: no cover
+                data = ping_frame.payload
+        else:
+            data = ping_frame.payload
+
+        payload = {"echo_ts": data.get("ts")}
+        if self._session is not None:  # pragma: no cover
+            return UXSPFrame.build(FrameType.PONG, self._session.encrypt(json.dumps(payload).encode("utf-8")))
+        return UXSPFrame.build(FrameType.PONG, payload)
 
     def close(self, reason: str = "normal") -> UXSPFrame:
         """Build an authenticated CLOSE frame and revoke the local session."""

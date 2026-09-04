@@ -758,7 +758,7 @@ class PostgresKeyStore(KeyStore):
                         f"SELECT card_json FROM {self._qtable} WHERE entity_id = %s", (entity_id,)
                     )
                     row = cur.fetchone()
-                active_conn.rollback()
+                active_conn.commit()
             if row is None:
                 return None
             raw = row[0]

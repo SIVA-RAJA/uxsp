@@ -656,14 +656,21 @@ class AsyncGuardedHandshake:
             raise ValueError("Invalid or missing initiator nonce.")
 
         if self._nonce_store is not None:
+            from uxsp.core.handshake import HandshakeExpiredError
+            if not await self._nonce_store.mark_used(f"hello:{hello.get('session_id')}", ttl_seconds=90):
+                raise HandshakeExpiredError("Replay attack detected: hello message already processed.")  # pragma: no cover
             if await self._nonce_store.is_seen(nonce):
                 raise ValueError("Replay detected: nonce already seen.")
             await self._nonce_store.mark_used(nonce)
+
+        class DummyStore:
+            def mark_used(self, n: str, ttl_seconds: int = 0) -> bool: return True
+            def is_seen(self, n: str) -> bool: return False
 
         return Handshake.respond(
             responder=self._responder,
             hello=hello,
             initiator_card=initiator_card,
-            nonce_store=None,  # type: ignore
+            nonce_store=DummyStore(),
             config=config,
         )

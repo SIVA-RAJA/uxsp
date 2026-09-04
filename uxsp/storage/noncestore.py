@@ -486,7 +486,12 @@ class TieredNonceStore(NonceStore):
                 return False
         except UXSPStoreError as e:
             _logger.warning("Fast nonce store unavailable, falling through to durable: %s", e)
-        return self._durable.mark_used(nonce, ttl_seconds=ttl_seconds)
+        
+        result = self._durable.mark_used(nonce, ttl_seconds=ttl_seconds)
+        if result:
+            with contextlib.suppress(UXSPStoreError):
+                self._fast.mark_used(nonce, ttl_seconds=ttl_seconds)
+        return result
 
     def is_seen(self, nonce: str) -> bool:
         """Check fast store first, fall back to durable."""

@@ -127,8 +127,8 @@ export async function seal(
   return envelope as UXSPEnvelope;
 }
 
-const seenNonces = new Set<string>();
-const MAX_NONCES = 10000;
+const seenNonces = new Map<string, number>();
+const NONCE_TTL_MS = 60000;
 
 /**
  * Open a sealed envelope from a sender.
@@ -146,14 +146,20 @@ export async function openSeal(
   }
 
   // Replay Protection
+  const now = Date.now();
   if (seenNonces.has(envelope.envelope_nonce)) {
     throw new Error("ReplayError: Envelope replay detected");
   }
-  seenNonces.add(envelope.envelope_nonce);
-  if (seenNonces.size > MAX_NONCES) {
-    // Basic cleanup: remove the oldest (iterators yield in insertion order)
-    const oldest = seenNonces.keys().next().value;
-    if (oldest) seenNonces.delete(oldest);
+  seenNonces.set(envelope.envelope_nonce, now);
+
+  if (seenNonces.size > 100) {
+    for (const [nonce, ts] of seenNonces.entries()) {
+      if (now - ts > NONCE_TTL_MS) {
+        seenNonces.delete(nonce);
+      } else {
+        break;
+      }
+    }
   }
 
   const ciphertext = decodeHex(envelope.ciphertext);
@@ -161,6 +167,13 @@ export async function openSeal(
   
   const pqcMode = (envelope as any).pqc_mode;
   const isPqcStubbed = pqcMode === "none";
+
+  if (isPqcStubbed) {
+    if (senderCard.public_keys.pqc_sig_pub && senderCard.public_keys.pqc_sig_pub.length > 32) {
+      throw new Error("Sender card advertises PQC capability but envelope specifies pqc_mode: 'none'");
+    }
+  }
+
   const ephemeralPubBytes = decodeHex(envelope.ephemeral_pub);
 
   // Verify Signatures
