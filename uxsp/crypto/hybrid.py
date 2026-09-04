@@ -38,6 +38,16 @@ import struct
 import time
 from typing import Any
 
+try:
+    import uxsp_core_native
+except ImportError:  # pragma: no cover
+    try:
+        from uxsp import uxsp_core_native
+    except ImportError:
+        uxsp_core_native = None  # type: ignore[assignment]
+
+_HAS_RUST_CORE = bool(uxsp_core_native is not None)
+
 from .asymmetric import (
     compute_shared_secret,
     generate_exchange_keypair,
@@ -295,6 +305,11 @@ def extract_public_keys(keypair: dict[str, dict[str, Any]]) -> dict[str, bytes]:
 
 def bind_fields(*fields: bytes) -> bytes:
     """Length-prefixed concatenation. Prevents length confusion attacks."""
+    if _HAS_RUST_CORE:
+        try:
+            return uxsp_core_native.bind_fields_native(list(fields))
+        except Exception:
+            pass
     result = b""
     for f in fields:
         if not isinstance(f, bytes):

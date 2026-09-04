@@ -18,6 +18,16 @@
   ],
   "author": "SIVA RAJA S",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SIVA-RAJA/uxsp.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
+  ],
   "devDependencies": {
     "@types/node": "^26.4.0"
   },

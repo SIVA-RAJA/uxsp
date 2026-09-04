@@ -1,12 +1,19 @@
-# Byte-compiled / optimized / DLL files
+# ── Rust Core & Cargo ─────────────────────────────────────────────────────────
+target/
+**/target/
+Cargo.lock.minor
+*.rs.bk
+
+# ── Python / Byte-compiled & C extensions ──────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
 *.so
+*.dylib
+*.dll
+*.pyd
 
-# Distribution / packaging
+# Packaging & distribution
 .Python
 build/
 develop-eggs/
@@ -47,14 +54,7 @@ pytest_cache/
 pytestdebug.log
 .benchmarks/
 
-# Documentation
-docs/_build/
-site/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# Environments and Local Settings
+# Environments & Local Settings
 .env
 .env.*
 .venv
@@ -65,33 +65,62 @@ env.bak/
 venv.bak/
 .python-version
 
-# Cryptographic Keys & Certificates
+# Linters & MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+
+# ── JavaScript / TypeScript / Node.js SDK ────────────────────────────────────
+node_modules/
+**/node_modules/
+sdks/js/dist/
+sdks/js/build/
+.npm/
+pnpm-lock.yaml
+
+# ── C# / .NET SDK ─────────────────────────────────────────────────────────────
+bin/
+**/bin/
+obj/
+**/obj/
+.vs/
+*.user
+*.suo
+
+# ── Java / Maven SDK ──────────────────────────────────────────────────────────
+.gradle/
+.settings/
+.classpath
+.project
+
+# ── Swift / Xcode SDK ─────────────────────────────────────────────────────────
+.build/
+**/.build/
+.swiftpm/
+**/.swiftpm/
+
+# ── Cryptographic Keys, Certs & Database files ─────────────────────────────────
 *.pem
 *.crt
 *.key
 *.pub
 *.p12
 *.pfx
-
-# SQLite & Database files
 *.sqlite
 *.sqlite3
 *.db
 
-# Logs and Temporary files
+# ── Logs & Output files ───────────────────────────────────────────────────────
 *.log
 *.tmp
 *.temp
 *.bak
 *~
+out.txt
+coverage_report.txt
 
-# mypy & linters
-.mypy_cache/
-.dmypy.json
-dmypy.json
-.ruff_cache/
-
-# OS specific
+# ── OS & IDE Settings ─────────────────────────────────────────────────────────
 .DS_Store
 .DS_Store?
 ._*
@@ -99,30 +128,14 @@ dmypy.json
 .Trashes
 ehthumbs.db
 Thumbs.db
-
-# IDEs & Editor settings
 .vscode/
 .idea/
 *.swp
 *.swo
-*.sublime-project
-*.sublime-workspace
 
-# Node / JS SDK
-node_modules/
-sdks/js/dist/
-sdks/js/node_modules/
-# Keep package-lock.json tracked for reproducible builds
-# package-lock.json
-# yarn.lock
-pnpm-lock.yaml
-
-# UXSP Project Specific
+# ── UXSP Project Specific ──────────────────────────────────────────────────────
 *.uxsp
 *.keys
 local_keys/
 .gemini/
 .antigravity/
-
-out.txt
-coverage_report.txt
