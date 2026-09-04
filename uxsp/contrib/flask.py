@@ -51,17 +51,27 @@ except ImportError as err:  # pragma: no cover
     ) from err
 
 
+from uxsp.transport.http import (
+    DEFAULT_UXSP_SELECTED,
+    HEADER_SEC_UXSP_SELECTED,
+    HEADER_SEC_UXSP_SUPPORT,
+    negotiate_protocol,
+)
+
 logger = logging.getLogger(__name__)
 
 class UXSPFlaskMiddleware:
     """
-    Flask extension for automatic request decryption and response encryption.
+    Flask extension for automatic request decryption, response encryption,
+    and Seamless Protocol Negotiation (Automatic Fallback & Upgrade).
 
     Args:
         app: Flask application instance.
         identity: Server Identity instance or callable returning an Identity.
         keystore: Optional BaseKeyStore instance.
-        require_encryption: If True, mandates UXSP encrypted requests for non-excluded routes.
+        fallback: If True (default), allows plain HTTPS/JSON requests to pass through unencrypted.
+        mode: Operation mode ("hybrid" default, or "strict" to mandate encryption).
+        require_encryption: Legacy setting. If True, sets mode="strict" (fallback=False).
         exclude_paths: List of route path prefixes to bypass (e.g. ["/static"]).
     """
 
@@ -70,13 +80,23 @@ class UXSPFlaskMiddleware:
         app: Flask | None = None,
         identity: Identity | Callable[[], Identity] | None = None,
         keystore: KeyStore | None = None,
-        require_encryption: bool = False,
+        fallback: bool = True,
+        mode: str = "hybrid",
+        require_encryption: bool | None = None,
         exclude_paths: Sequence[str] | None = None,
         max_response_size: int = 16 * 1024 * 1024,
     ) -> None:
         self.identity = identity
         self.keystore = keystore
-        self.require_encryption = require_encryption
+
+        if require_encryption is not None:
+            self.fallback = not require_encryption
+            self.mode = "strict" if require_encryption else mode
+        else:
+            self.fallback = fallback
+            self.mode = mode.lower() if mode else "hybrid"
+
+        self.require_encryption = not self.fallback or self.mode == "strict"
         self.exclude_paths = list(exclude_paths) if exclude_paths else ["/static"]
         self.max_response_size = max_response_size
 
@@ -94,8 +114,6 @@ class UXSPFlaskMiddleware:
             return self.identity
         return _GLOBAL_CONTEXT.get_identity()
 
-
-
     def _before_request(self) -> Response | tuple[Response, int] | None:
         path = request.path
         if any(path.startswith(exc) for exc in self.exclude_paths):
@@ -105,6 +123,11 @@ class UXSPFlaskMiddleware:
         g.uxsp_payload = None
         g.uxsp_sender_id = None
         g.uxsp_sender_card = None
+        g.uxsp_negotiated = None
+
+        sec_support = request.headers.get(HEADER_SEC_UXSP_SUPPORT) or request.headers.get("sec-uxsp-support")
+        if sec_support:
+            g.uxsp_negotiated = negotiate_protocol(sec_support) or DEFAULT_UXSP_SELECTED
 
         header_pkg = request.headers.get("X-UXSP-Package")
         header_sender = request.headers.get("X-UXSP-Sender")
@@ -115,13 +138,13 @@ class UXSPFlaskMiddleware:
         package: SecurePackage | None = None
 
         if (header_pkg or header_sender or "application/uxsp+json" in content_type) and (body_bytes and body_bytes.strip().startswith(b"{")):
-                try:
-                    data_dict = json.loads(body_bytes.decode("utf-8"))
-                    if isinstance(data_dict, dict) and "sender_id" in data_dict and ("envelope" in data_dict or "chunks" in data_dict):
-                        package = SecurePackage.from_dict(data_dict)
-                        is_uxsp_request = True
-                except Exception:
-                    pass
+            try:
+                data_dict = json.loads(body_bytes.decode("utf-8"))
+                if isinstance(data_dict, dict) and "sender_id" in data_dict and ("envelope" in data_dict or "chunks" in data_dict):
+                    package = SecurePackage.from_dict(data_dict)
+                    is_uxsp_request = True
+            except Exception:
+                pass
 
         server_identity = self._get_identity()
 
@@ -161,6 +184,10 @@ class UXSPFlaskMiddleware:
         sender_card = getattr(g, "uxsp_sender_card", None)
         server_identity = self._get_identity()
 
+        selected = getattr(g, "uxsp_negotiated", None) or (
+            DEFAULT_UXSP_SELECTED if request.headers.get(HEADER_SEC_UXSP_SUPPORT) or request.headers.get("sec-uxsp-support") else None
+        )
+
         if should_encrypt and sender_card is not None:
             if response.is_streamed:
                 def encrypt_stream():  # type: ignore[no-untyped-def]
@@ -188,6 +215,8 @@ class UXSPFlaskMiddleware:
                 encrypted_response.headers["X-UXSP-Sender"] = server_identity.entity_id
                 encrypted_response.headers["X-UXSP-Recipient"] = getattr(g, "uxsp_sender_id", "") or ""
                 encrypted_response.headers["X-UXSP-Version"] = "1"
+                if selected:
+                    encrypted_response.headers[HEADER_SEC_UXSP_SELECTED] = selected
                 return encrypted_response
 
             content = response.get_data()
@@ -212,8 +241,17 @@ class UXSPFlaskMiddleware:
             response.headers["X-UXSP-Sender"] = server_identity.entity_id
             response.headers["X-UXSP-Recipient"] = getattr(g, "uxsp_sender_id", "") or ""
             response.headers["X-UXSP-Version"] = "1"
+            if selected:
+                response.headers[HEADER_SEC_UXSP_SELECTED] = selected
+
+            return response
+
+        # Attach Sec-UXSP-Selected for unencrypted fallback response if Sec-UXSP-Support was sent
+        if selected:
+            response.headers[HEADER_SEC_UXSP_SELECTED] = selected
 
         return response
+
 
 
 def protect_route(

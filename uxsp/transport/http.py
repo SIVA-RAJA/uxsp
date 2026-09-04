@@ -49,7 +49,27 @@ HEADER_SENDER = "X-UXSP-Sender"
 HEADER_RECIPIENT = "X-UXSP-Recipient"
 HEADER_TIMESTAMP = "X-UXSP-Timestamp"
 HEADER_NONCE = "X-UXSP-Nonce"
+HEADER_SEC_UXSP_SUPPORT = "Sec-UXSP-Support"
+HEADER_SEC_UXSP_SELECTED = "Sec-UXSP-Selected"
+DEFAULT_UXSP_SUPPORT = "v1.2, ml-kem-768"
+DEFAULT_UXSP_SELECTED = "v1.2"
 UXSP_CONTENT_TYPE = "application/uxsp+json"
+
+
+def negotiate_protocol(sec_support_header: str | None) -> str | None:
+    """
+    Parse Sec-UXSP-Support header and return selected UXSP version or capability string if supported.
+    Returns None if sec_support_header is absent or empty.
+    """
+    if not sec_support_header:
+        return None
+    tokens = [t.strip().lower() for t in sec_support_header.split(",")]
+    if "v1.2" in tokens or any("ml-kem" in t for t in tokens):
+        return "v1.2"
+    if "v1.0" in tokens or "v1" in tokens:
+        return "v1.0"
+    return DEFAULT_UXSP_SELECTED
+
 
 
 # ─────────────────────────────────────────────
@@ -111,11 +131,18 @@ class UXSPHTTPRequest:
         envelope = UXSPHTTPRequest.parse(request.headers, request.body, my_id=my_entity_id)
     """
     @staticmethod
-    def build(envelope: dict[str, Any] | Envelope) -> dict[str, Any]:
-        return UXSPHTTPRequest._build_envelope_response(envelope)
+    def build(
+        envelope: dict[str, Any] | Envelope,
+        sec_support: str | None = DEFAULT_UXSP_SUPPORT,
+    ) -> dict[str, Any]:
+        return UXSPHTTPRequest._build_envelope_response(envelope, sec_support=sec_support)
 
     @staticmethod
-    def _build_envelope_response(envelope: dict[str, Any] | Envelope) -> dict[str, Any]:
+    def _build_envelope_response(
+        envelope: dict[str, Any] | Envelope,
+        sec_support: str | None = None,
+        sec_selected: str | None = None,
+    ) -> dict[str, Any]:
 
         d: dict[str, Any] = envelope.to_dict() if isinstance(envelope, Envelope) else envelope
 
@@ -126,11 +153,16 @@ class UXSPHTTPRequest:
             HEADER_SENDER: str(d.get("sender_id", "")),
             HEADER_RECIPIENT: str(d.get("recipient_id", "")),
         }
+        if sec_support:
+            headers[HEADER_SEC_UXSP_SUPPORT] = sec_support
+        if sec_selected:
+            headers[HEADER_SEC_UXSP_SELECTED] = sec_selected
         return {
             "headers": headers,
             "body": json.dumps(d),
             "content_type": UXSP_CONTENT_TYPE,
         }
+
 
     @staticmethod
     def parse(
@@ -230,9 +262,13 @@ class UXSPHTTPResponse:
                                           my_id=my_entity_id)
     """
     @staticmethod
-    def build(envelope: dict[str, Any] | Envelope) -> dict[str, Any]:
+    def build(
+        envelope: dict[str, Any] | Envelope,
+        sec_selected: str | None = DEFAULT_UXSP_SELECTED,
+    ) -> dict[str, Any]:
 
-        return UXSPHTTPRequest._build_envelope_response(envelope)
+        return UXSPHTTPRequest._build_envelope_response(envelope, sec_selected=sec_selected)
+
 
     @staticmethod
     def parse(

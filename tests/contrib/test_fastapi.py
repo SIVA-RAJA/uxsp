@@ -383,8 +383,9 @@ def test_fastapi_json_response_mock(server_identity, client_identity):
     middleware = UXSPFastAPIMiddleware(app, identity=server_identity)
 
     async def dummy_receive(): return {"type": "http.request", "body": b"", "more_body": False}
-    scope = {"type": "http", "method": "POST", "path": "/api/small", "headers": []}
+    scope = {"type": "http", "method": "POST", "path": "/api/small", "headers": [(b"sec-uxsp-support", b"v1.2, ml-kem-768")]}
     req = Request(scope, receive=dummy_receive)
+
 
     async def mock_call_next(request):
         request.state.uxsp_force_encrypt = True

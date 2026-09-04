@@ -53,16 +53,26 @@ except ImportError as err:  # pragma: no cover
     ) from err
 
 
+from uxsp.transport.http import (
+    DEFAULT_UXSP_SELECTED,
+    HEADER_SEC_UXSP_SELECTED,
+    HEADER_SEC_UXSP_SUPPORT,
+    negotiate_protocol,
+)
+
 logger = logging.getLogger(__name__)
 
 class UXSPDjangoMiddleware:
     """
-    Django middleware for automatic request decryption and response encryption.
+    Django middleware for automatic request decryption, response encryption,
+    and Seamless Protocol Negotiation (Automatic Fallback & Upgrade).
 
     Reads configuration options from Django settings if available:
         - UXSP_SERVER_IDENTITY: Server Identity instance.
         - UXSP_KEYSTORE: KeyStore instance.
-        - UXSP_REQUIRE_ENCRYPTION: bool (default: False).
+        - UXSP_FALLBACK: bool (default: True).
+        - UXSP_MODE: str ("hybrid" or "strict", default: "hybrid").
+        - UXSP_REQUIRE_ENCRYPTION: bool (legacy setting, default: False).
         - UXSP_EXCLUDE_PATHS: list of path prefixes to exclude (default: ["/admin/", "/static/"]).
     """
 
@@ -71,15 +81,22 @@ class UXSPDjangoMiddleware:
         self.max_response_size: int = getattr(settings, "UXSP_MAX_RESPONSE_SIZE", 16 * 1024 * 1024)
         self.identity: Identity | None = getattr(settings, "UXSP_SERVER_IDENTITY", None)
         self.keystore: KeyStore | None = getattr(settings, "UXSP_KEYSTORE", None)
-        self.require_encryption: bool = getattr(settings, "UXSP_REQUIRE_ENCRYPTION", False)
+
+        req_enc = getattr(settings, "UXSP_REQUIRE_ENCRYPTION", None)
+        if req_enc is not None:
+            self.fallback = not req_enc
+            self.mode = "strict" if req_enc else getattr(settings, "UXSP_MODE", "hybrid")
+        else:
+            self.fallback = getattr(settings, "UXSP_FALLBACK", True)
+            self.mode = getattr(settings, "UXSP_MODE", "hybrid").lower()
+
+        self.require_encryption = not self.fallback or self.mode == "strict"
         self.exclude_paths: Sequence[str] = getattr(settings, "UXSP_EXCLUDE_PATHS", ["/admin/", "/static/"])
 
     def _get_identity(self) -> Identity:
         if isinstance(self.identity, Identity):
             return self.identity
         return _GLOBAL_CONTEXT.get_identity()
-
-
 
     def __call__(self, request: HttpRequest) -> HttpResponse:
         path = request.path
@@ -91,6 +108,11 @@ class UXSPDjangoMiddleware:
         request.uxsp_payload = None
         request.uxsp_sender_id = None
         request.uxsp_sender_card = None
+        request.uxsp_negotiated = None
+
+        sec_support = request.META.get("HTTP_SEC_UXSP_SUPPORT")
+        if sec_support:
+            request.uxsp_negotiated = negotiate_protocol(sec_support) or DEFAULT_UXSP_SELECTED
 
         header_pkg = request.META.get("HTTP_X_UXSP_PACKAGE")
         header_sender = request.META.get("HTTP_X_UXSP_SENDER")
@@ -101,13 +123,13 @@ class UXSPDjangoMiddleware:
         package: SecurePackage | None = None
 
         if (header_pkg or header_sender or "application/uxsp+json" in content_type) and (body_bytes and body_bytes.strip().startswith(b"{")):
-                try:
-                    data_dict = json.loads(body_bytes.decode("utf-8"))
-                    if isinstance(data_dict, dict) and "sender_id" in data_dict and ("envelope" in data_dict or "chunks" in data_dict):
-                        package = SecurePackage.from_dict(data_dict)
-                        is_uxsp_request = True
-                except Exception:
-                    pass
+            try:
+                data_dict = json.loads(body_bytes.decode("utf-8"))
+                if isinstance(data_dict, dict) and "sender_id" in data_dict and ("envelope" in data_dict or "chunks" in data_dict):
+                    package = SecurePackage.from_dict(data_dict)
+                    is_uxsp_request = True
+            except Exception:
+                pass
 
         server_identity = self._get_identity()
 
@@ -157,6 +179,9 @@ class UXSPDjangoMiddleware:
 
         should_encrypt = getattr(request, "uxsp_encrypted", False) or getattr(request, "uxsp_force_encrypt", False)
         sender_card = getattr(request, "uxsp_sender_card", None)
+        selected = getattr(request, "uxsp_negotiated", None) or (
+            DEFAULT_UXSP_SELECTED if request.META.get("HTTP_SEC_UXSP_SUPPORT") else None
+        )
 
         if should_encrypt and sender_card is not None:
             from django.http import StreamingHttpResponse
@@ -185,6 +210,8 @@ class UXSPDjangoMiddleware:
                 encrypted_response["X-UXSP-Sender"] = server_identity.entity_id
                 encrypted_response["X-UXSP-Recipient"] = getattr(request, "uxsp_sender_id", "") or ""
                 encrypted_response["X-UXSP-Version"] = "1"
+                if selected:
+                    encrypted_response[HEADER_SEC_UXSP_SELECTED] = selected
                 return encrypted_response
 
             content = response.content
@@ -206,9 +233,16 @@ class UXSPDjangoMiddleware:
             encrypted_response["X-UXSP-Sender"] = server_identity.entity_id
             encrypted_response["X-UXSP-Recipient"] = getattr(request, "uxsp_sender_id", "") or ""
             encrypted_response["X-UXSP-Version"] = "1"
+            if selected:
+                encrypted_response[HEADER_SEC_UXSP_SELECTED] = selected
             return encrypted_response
 
+        # Attach Sec-UXSP-Selected for unencrypted fallback response if Sec-UXSP-Support was sent
+        if selected:
+            response[HEADER_SEC_UXSP_SELECTED] = selected
+
         return response
+
 
 
 def protect_view(

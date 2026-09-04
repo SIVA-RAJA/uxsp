@@ -53,17 +53,27 @@ except ImportError as err:  # pragma: no cover
     ) from err
 
 
+from uxsp.transport.http import (
+    DEFAULT_UXSP_SELECTED,
+    HEADER_SEC_UXSP_SELECTED,
+    HEADER_SEC_UXSP_SUPPORT,
+    negotiate_protocol,
+)
+
 logger = logging.getLogger(__name__)
 
 class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
     """
-    FastAPI / Starlette middleware for automatic request decryption and response encryption.
+    FastAPI / Starlette middleware for automatic request decryption, response encryption,
+    and Seamless Protocol Negotiation (Automatic Fallback & Upgrade).
 
     Args:
         app: Starlette / FastAPI application instance.
         identity: Server Identity object or a callable returning an Identity.
         keystore: Optional BaseKeyStore to resolve peer PublicCards by entity_id.
-        require_encryption: If True, all non-excluded routes mandate encrypted UXSP requests.
+        fallback: If True (default), allows plain HTTPS/JSON requests to pass through unencrypted.
+        mode: Operation mode ("hybrid" default, or "strict" to mandate encryption).
+        require_encryption: Legacy setting. If True, sets mode="strict" (fallback=False).
         exclude_paths: List of path prefixes to bypass UXSP processing (e.g. ["/docs", "/openapi.json"]).
     """
 
@@ -72,14 +82,24 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
         app: Any,
         identity: Identity | Callable[[], Identity] | None = None,
         keystore: KeyStore | None = None,
-        require_encryption: bool = False,
+        fallback: bool = True,
+        mode: str = "hybrid",
+        require_encryption: bool | None = None,
         exclude_paths: Sequence[str] | None = None,
         max_response_size: int = 16 * 1024 * 1024,
     ) -> None:
         super().__init__(app)
         self.identity = identity
         self.keystore = keystore
-        self.require_encryption = require_encryption
+
+        if require_encryption is not None:
+            self.fallback = not require_encryption
+            self.mode = "strict" if require_encryption else mode
+        else:
+            self.fallback = fallback
+            self.mode = mode.lower() if mode else "hybrid"
+
+        self.require_encryption = not self.fallback or self.mode == "strict"
         self.exclude_paths = list(exclude_paths) if exclude_paths else ["/docs", "/openapi.json", "/redoc"]
         self.max_response_size = max_response_size
 
@@ -89,8 +109,6 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
         if isinstance(self.identity, Identity):
             return self.identity
         return _GLOBAL_CONTEXT.get_identity()
-
-
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         # 1. Skip excluded paths
@@ -103,6 +121,11 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
         request.state.uxsp_payload = None
         request.state.uxsp_sender_id = None
         request.state.uxsp_sender_card = None
+        request.state.uxsp_negotiated = None
+
+        sec_support = request.headers.get(HEADER_SEC_UXSP_SUPPORT) or request.headers.get("sec-uxsp-support")
+        if sec_support:
+            request.state.uxsp_negotiated = negotiate_protocol(sec_support) or DEFAULT_UXSP_SELECTED
 
         header_pkg = request.headers.get("X-UXSP-Package")
         header_sender = request.headers.get("X-UXSP-Sender")
@@ -115,13 +138,13 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
         package: SecurePackage | None = None
 
         if (header_pkg or header_sender or "application/uxsp+json" in content_type) and (body_bytes and body_bytes.strip().startswith(b"{")):
-                try:
-                    data_dict = json.loads(body_bytes.decode("utf-8"))
-                    if isinstance(data_dict, dict) and "sender_id" in data_dict and ("envelope" in data_dict or "chunks" in data_dict):
-                        package = SecurePackage.from_dict(data_dict)
-                        is_uxsp_request = True
-                except Exception:
-                    pass
+            try:
+                data_dict = json.loads(body_bytes.decode("utf-8"))
+                if isinstance(data_dict, dict) and "sender_id" in data_dict and ("envelope" in data_dict or "chunks" in data_dict):
+                    package = SecurePackage.from_dict(data_dict)
+                    is_uxsp_request = True
+            except Exception:
+                pass
 
         server_identity = self._get_identity()
 
@@ -165,7 +188,6 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
                 async def receive_override() -> dict[str, Any]:
                     if getattr(request.state, "is_done", False):
                         if original_receive is not None:
-                            # Safely fetch the next message (likely disconnect) if endpoint is done
                             return await original_receive()  # type: ignore[no-any-return]
                         return {"type": "http.disconnect"}
 
@@ -194,7 +216,10 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         request.state.is_done = True
 
-        # Encrypt outgoing response if request was encrypted or require_encryption is set
+        # Attach Sec-UXSP-Selected if protocol was negotiated or default
+        selected = request.state.uxsp_negotiated or (DEFAULT_UXSP_SELECTED if sec_support else None)
+
+        # Encrypt outgoing response if request was encrypted or force encrypt set
         should_encrypt = request.state.uxsp_encrypted or getattr(request.state, "uxsp_force_encrypt", False)
         if should_encrypt and request.state.uxsp_sender_card is not None:
             resp_body = getattr(response, "body", None)
@@ -227,6 +252,8 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
                 encrypted_response.headers["X-UXSP-Sender"] = server_identity.entity_id
                 encrypted_response.headers["X-UXSP-Recipient"] = request.state.uxsp_sender_id or ""
                 encrypted_response.headers["X-UXSP-Version"] = "1"
+                if selected:
+                    encrypted_response.headers[HEADER_SEC_UXSP_SELECTED] = selected
                 return encrypted_response
 
             if resp_body:
@@ -253,9 +280,16 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
                 encrypted_response.headers["X-UXSP-Sender"] = server_identity.entity_id
                 encrypted_response.headers["X-UXSP-Recipient"] = request.state.uxsp_sender_id or ""
                 encrypted_response.headers["X-UXSP-Version"] = "1"
+                if selected:
+                    encrypted_response.headers[HEADER_SEC_UXSP_SELECTED] = selected
                 return encrypted_response
 
+        # For unencrypted fallback response, attach Sec-UXSP-Selected header if client sent Sec-UXSP-Support
+        if selected:
+            response.headers[HEADER_SEC_UXSP_SELECTED] = selected
+
         return response
+
 
 
 UXSPMiddleware = UXSPFastAPIMiddleware

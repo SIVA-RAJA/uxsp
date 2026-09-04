@@ -104,9 +104,13 @@ export class UXSPClient {
   }
 
   /**
-   * Construct HTTP headers for UXSP requests (X-UXSP-Sender, X-UXSP-Package).
+   * Construct HTTP headers for UXSP requests (X-UXSP-Sender, X-UXSP-Package, Sec-UXSP-Support).
    */
-  static buildHeaders(senderId: string, pkg?: SecurePackage): Record<string, string> {
+  static buildHeaders(
+    senderId: string,
+    pkg?: SecurePackage,
+    options?: { secUxspSupport?: string; includeNegotiationHeader?: boolean }
+  ): Record<string, string> {
     const headers: Record<string, string> = {
       "X-UXSP-Sender": senderId,
       "Content-Type": "application/json",
@@ -114,8 +118,35 @@ export class UXSPClient {
     if (pkg) {
       headers["X-UXSP-Package"] = pkg.sender_id;
     }
+    if (options?.includeNegotiationHeader !== false) {
+      headers["Sec-UXSP-Support"] = options?.secUxspSupport || "v1.2, ml-kem-768";
+    }
     return headers;
   }
+
+  /**
+   * Inspect server response headers to determine if UXSP post-quantum security is supported.
+   */
+  static inspectResponseNegotiation(headers: Record<string, string>): {
+    isUXSPSupported: boolean;
+    selectedVersion?: string;
+  } {
+    const normalizedHeaders: Record<string, string> = {};
+    for (const [k, v] of Object.entries(headers)) {
+      normalizedHeaders[k.toLowerCase()] = v;
+    }
+    const selected = normalizedHeaders["sec-uxsp-selected"];
+    if (selected) {
+      return {
+        isUXSPSupported: true,
+        selectedVersion: selected,
+      };
+    }
+    return {
+      isUXSPSupported: false,
+    };
+  }
+
 
   /**
    * Parse a PublicCard JSON string or object.

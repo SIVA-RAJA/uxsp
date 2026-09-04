@@ -194,13 +194,19 @@ from uxsp.storage.noncestore import (
 # TRANSPORT
 # ─────────────────────────────────────────────
 from uxsp.transport.http import (
+    DEFAULT_UXSP_SELECTED,
+    DEFAULT_UXSP_SUPPORT,
+    HEADER_SEC_UXSP_SELECTED,
+    HEADER_SEC_UXSP_SUPPORT,
     MissingUXSPHeaderError,
     UXSPHTTPError,
     UXSPHTTPRequest,
     UXSPHTTPResponse,
     UXSPVersionMismatchError,
     WrongRecipientError,
+    negotiate_protocol,
 )
+
 from uxsp.transport.websocket import (
     FrameTooLargeError,
     FrameType,
@@ -461,7 +467,13 @@ __all__ = [
     "MissingUXSPHeaderError",
     "WrongRecipientError",
     "UXSPVersionMismatchError",
+    "HEADER_SEC_UXSP_SUPPORT",
+    "HEADER_SEC_UXSP_SELECTED",
+    "DEFAULT_UXSP_SUPPORT",
+    "DEFAULT_UXSP_SELECTED",
+    "negotiate_protocol",
     "UXSPWebSocket",
+
     "UXSPFrame",
     "FrameType",
     "UXSPWebSocketError",
