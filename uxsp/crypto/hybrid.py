@@ -36,7 +36,7 @@ from __future__ import annotations
 import os
 import struct
 import time
-from typing import Any, cast
+from typing import Any
 
 from .asymmetric import (
     compute_shared_secret,
@@ -55,18 +55,6 @@ from .pqc import (
     pqc_verify,
 )
 from .symmetric import decrypt, encrypt
-
-uxsp_core_native: Any = None
-try:
-    import uxsp_core_native  # type: ignore[no-redef]
-except ImportError:  # pragma: no cover
-    try:
-        import importlib
-        uxsp_core_native = importlib.import_module("uxsp.uxsp_core_native")
-    except (ImportError, AttributeError):
-        pass
-
-_HAS_RUST_CORE = bool(uxsp_core_native is not None)
 
 # ═════════════════════════════════════════════════════════════
 # ERRORS
@@ -307,11 +295,6 @@ def extract_public_keys(keypair: dict[str, dict[str, Any]]) -> dict[str, bytes]:
 
 def bind_fields(*fields: bytes) -> bytes:
     """Length-prefixed concatenation. Prevents length confusion attacks."""
-    if _HAS_RUST_CORE:
-        try:
-            return cast(bytes, uxsp_core_native.bind_fields_native(list(fields)))
-        except Exception:
-            pass
     result = b""
     for f in fields:
         if not isinstance(f, bytes):

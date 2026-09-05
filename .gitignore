@@ -67,13 +67,7 @@ dmypy.json
 .pyre/
 .pytype/
 
-# ── 2. Rust Engine (crates/uxsp-core) ─────────────────────────────────────────
-target/
-**/target/
-Cargo.lock.minor
-*.rs.bk
-
-# ── 3. JavaScript / TypeScript SDK (sdks/js) ──────────────────────────────────
+# ── 2. JavaScript / TypeScript SDK (sdks/js) ──────────────────────────────────
 node_modules/
 **/node_modules/
 sdks/js/dist/
@@ -98,42 +92,7 @@ sdks/js/tests/**/*.d.ts
 sdks/js/tests/*.d.ts.map
 sdks/js/tests/**/*.d.ts.map
 
-# ── 4. Go SDK (sdks/go) ───────────────────────────────────────────────────────
-sdks/go/bin/
-*.test
-*.prof
-
-# ── 5. .NET / C# SDK (sdks/dotnet) ────────────────────────────────────────────
-bin/
-**/bin/
-obj/
-**/obj/
-.vs/
-*.user
-*.suo
-*.userosscache
-*.sln.docstates
-
-# ── 6. Java SDK (sdks/java) ───────────────────────────────────────────────────
-*.class
-*.jar
-*.war
-*.ear
-.gradle/
-**/build/
-.settings/
-.classpath
-.project
-
-# ── 7. Swift SDK (sdks/swift) ─────────────────────────────────────────────────
-.build/
-**/.build/
-.swiftpm/
-**/.swiftpm/
-*.xcodeproj/
-*.xcworkspace/
-
-# ── 8. Cryptographic Keys, Secrets & Databases ────────────────────────────────
+# ── 3. Cryptographic Keys, Secrets & Databases ────────────────────────────────
 # Never commit private keys, secrets, local credentials or databases
 *.pem
 *.crt
@@ -159,7 +118,7 @@ local_keys/
 !.env.example
 !.env.template
 
-# ── 9. Logs & Temporary Output Files ──────────────────────────────────────────
+# ── 4. Logs & Temporary Output Files ──────────────────────────────────────────
 *.log
 *.tmp
 *.temp
@@ -168,7 +127,7 @@ local_keys/
 out.txt
 coverage_report.txt
 
-# ── 10. Operating System & Editor Files ───────────────────────────────────────
+# ── 5. Operating System & Editor Files ───────────────────────────────────────
 .DS_Store
 .DS_Store?
 ._*
@@ -181,6 +140,6 @@ Thumbs.db
 *.swp
 *.swo
 
-# ── 11. Antigravity & AI Agent Artifacts ──────────────────────────────────────
+# ── 6. Antigravity & AI Agent Artifacts ──────────────────────────────────────
 .gemini/
 .antigravity/
