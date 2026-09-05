@@ -56,7 +56,6 @@ except ImportError as err:  # pragma: no cover
 from uxsp.transport.http import (
     DEFAULT_UXSP_SELECTED,
     HEADER_SEC_UXSP_SELECTED,
-    HEADER_SEC_UXSP_SUPPORT,
     negotiate_protocol,
 )
 

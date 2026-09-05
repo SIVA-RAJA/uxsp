@@ -91,9 +91,8 @@ class LiveSession:
         nonce = encrypted_frame[2 + meta_len + 2 : 2 + meta_len + 2 + NONCE_SIZE]
         ciphertext = encrypted_frame[2 + meta_len + 2 + NONCE_SIZE :]
 
-        if expected_seq is not None:
-            if expected_seq <= self._last_seq:
-                raise ReplayError("Frame replay detected")
+        if expected_seq is not None and expected_seq <= self._last_seq:
+            raise ReplayError("Frame replay detected")
 
         while self.epoch < epoch:  # pragma: no cover
             self._ratchet_key()

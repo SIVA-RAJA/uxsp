@@ -1,13 +1,14 @@
 {
   "name": "@siva_raja/uxsp",
   "version": "1.2.0",
+  "type": "module",
   "description": "UXSP JavaScript/TypeScript Browser SDK",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "test": "npx tsx --test tests/**/*.test.ts"
+    "test": "tsc && node --test tests/**/*.test.js tests/**/*.test.ts"
   },
   "keywords": [
     "uxsp",

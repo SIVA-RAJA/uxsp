@@ -1,10 +1,9 @@
-# ── Rust Core & Cargo ─────────────────────────────────────────────────────────
-target/
-**/target/
-Cargo.lock.minor
-*.rs.bk
+# ==============================================================================
+# UXSP .gitignore
+# Canonical ignore rules for Python core, Rust native engine, and multi-platform SDKs
+# ==============================================================================
 
-# ── Python / Byte-compiled & C extensions ──────────────────────────────────────
+# ── 1. Python (Core Engine & CLI) ─────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
@@ -13,13 +12,12 @@ __pycache__/
 *.dll
 *.pyd
 
-# Packaging & distribution
+# Packaging & Distribution
 .Python
 build/
 develop-eggs/
 dist/
 .dist/
-.dist/*
 downloads/
 eggs/
 .eggs/
@@ -29,15 +27,23 @@ parts/
 sdist/
 var/
 wheels/
-*.whl
-*.tar.gz
 share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
 MANIFEST
 
-# Unit test / coverage reports
+# Virtual Environments
+.venv/
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+
+# Testing & Coverage
 htmlcov/
 .tox/
 .nox/
@@ -49,37 +55,55 @@ coverage.xml
 *.cover
 *.py,cover
 .pytest_cache/
-.pytest_cache/**
 pytest_cache/
 pytestdebug.log
 .benchmarks/
 
-# Environments & Local Settings
-.env
-.env.*
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-.python-version
-
-# Linters & MyPy
+# Linters, Formatting & Type Checkers
 .mypy_cache/
 .dmypy.json
 dmypy.json
 .ruff_cache/
+.pyre/
+.pytype/
 
-# ── JavaScript / TypeScript / Node.js SDK ────────────────────────────────────
+# ── 2. Rust Engine (crates/uxsp-core) ─────────────────────────────────────────
+target/
+**/target/
+Cargo.lock.minor
+*.rs.bk
+
+# ── 3. JavaScript / TypeScript SDK (sdks/js) ──────────────────────────────────
 node_modules/
 **/node_modules/
 sdks/js/dist/
 sdks/js/build/
+sdks/js/coverage/
 .npm/
 pnpm-lock.yaml
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.tsbuildinfo
 
-# ── C# / .NET SDK ─────────────────────────────────────────────────────────────
+# Transient compiled test artifacts (in case tsc is run without outDir)
+sdks/js/tests/*.js
+sdks/js/tests/**/*.js
+sdks/js/tests/*.js.map
+sdks/js/tests/**/*.js.map
+sdks/js/tests/*.d.ts
+sdks/js/tests/**/*.d.ts
+sdks/js/tests/*.d.ts.map
+sdks/js/tests/**/*.d.ts.map
+
+# ── 4. Go SDK (sdks/go) ───────────────────────────────────────────────────────
+sdks/go/bin/
+*.test
+*.prof
+
+# ── 5. .NET / C# SDK (sdks/dotnet) ────────────────────────────────────────────
 bin/
 **/bin/
 obj/
@@ -87,31 +111,55 @@ obj/
 .vs/
 *.user
 *.suo
+*.userosscache
+*.sln.docstates
 
-# ── Java / Maven SDK ──────────────────────────────────────────────────────────
+# ── 6. Java SDK (sdks/java) ───────────────────────────────────────────────────
+*.class
+*.jar
+*.war
+*.ear
 .gradle/
+**/build/
 .settings/
 .classpath
 .project
 
-# ── Swift / Xcode SDK ─────────────────────────────────────────────────────────
+# ── 7. Swift SDK (sdks/swift) ─────────────────────────────────────────────────
 .build/
 **/.build/
 .swiftpm/
 **/.swiftpm/
+*.xcodeproj/
+*.xcworkspace/
 
-# ── Cryptographic Keys, Certs & Database files ─────────────────────────────────
+# ── 8. Cryptographic Keys, Secrets & Databases ────────────────────────────────
+# Never commit private keys, secrets, local credentials or databases
 *.pem
 *.crt
 *.key
 *.pub
 *.p12
 *.pfx
+*.uxsp
+*.keys
+local_keys/
+
+# Database files
 *.sqlite
 *.sqlite3
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
 
-# ── Logs & Output files ───────────────────────────────────────────────────────
+# Environment variables
+.env
+.env.*
+!.env.example
+!.env.template
+
+# ── 9. Logs & Temporary Output Files ──────────────────────────────────────────
 *.log
 *.tmp
 *.temp
@@ -120,7 +168,7 @@ obj/
 out.txt
 coverage_report.txt
 
-# ── OS & IDE Settings ─────────────────────────────────────────────────────────
+# ── 10. Operating System & Editor Files ───────────────────────────────────────
 .DS_Store
 .DS_Store?
 ._*
@@ -133,9 +181,6 @@ Thumbs.db
 *.swp
 *.swo
 
-# ── UXSP Project Specific ──────────────────────────────────────────────────────
-*.uxsp
-*.keys
-local_keys/
+# ── 11. Antigravity & AI Agent Artifacts ──────────────────────────────────────
 .gemini/
 .antigravity/

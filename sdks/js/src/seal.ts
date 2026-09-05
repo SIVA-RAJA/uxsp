@@ -176,6 +176,10 @@ export async function openSeal(
 
   const ephemeralPubBytes = decodeHex(envelope.ephemeral_pub);
 
+  if (!isPqcStubbed && !envelope.kem_ciphertext) {
+    throw new Error("Envelope is missing kem_ciphertext but is not in classical-only mode.");
+  }
+
   // Verify Signatures
   const sigPayload = bindFields(
     encodeUTF8("UXSP-1"),

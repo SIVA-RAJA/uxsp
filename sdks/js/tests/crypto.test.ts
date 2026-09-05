@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import * as assert from "node:assert";
 
-import { aesGcmEncrypt, aesGcmDecrypt } from "../src/crypto.js";
+import { aesGcmEncrypt, aesGcmDecrypt } from "../dist/crypto.js";
 
 test("crypto - AES-GCM Encrypt and Decrypt Happy Path", async () => {
     const key = new Uint8Array(32);

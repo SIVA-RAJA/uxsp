@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { UXSPClient } from "../src/client.js";
-import { Identity } from "../src/identity.js";
-import { PublicCard, SecurePackage } from "../src/types.js";
-import { generateX25519KeyPair } from "../src/crypto.js";
-import { seal } from "../src/seal.js";
+import { UXSPClient } from "../dist/client.js";
+import { Identity } from "../dist/identity.js";
+import type { PublicCard, SecurePackage } from "../dist/types.js";
+import { generateX25519KeyPair } from "../dist/crypto.js";
+import { seal } from "../dist/seal.js";
 
 test("UXSPClient - Full Coverage Test Suite", async () => {
   // 1. Setup Mock Identities

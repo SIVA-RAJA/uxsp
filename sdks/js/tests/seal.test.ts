@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import * as assert from "node:assert";
-import { Identity } from "../src/identity.js";
-import { seal, openSeal } from "../src/seal.js";
-import { encodeHex, decodeHex } from "../src/utils.js";
+import { Identity } from "../dist/identity.js";
+import { seal, openSeal } from "../dist/seal.js";
+import { encodeHex, decodeHex } from "../dist/utils.js";
 
 test("seal - Creates valid hybrid envelope when PQC is active", async () => {
     const sender = await Identity.create("Alice");

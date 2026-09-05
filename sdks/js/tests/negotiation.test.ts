@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import * as assert from "node:assert";
 
-import { UXSPClient } from "../src/client.js";
+import { UXSPClient } from "../dist/client.js";
 
 test("client - buildHeaders includes Sec-UXSP-Support by default", () => {
     const headers = UXSPClient.buildHeaders("sender_123");

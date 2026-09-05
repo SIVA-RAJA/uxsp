@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import * as assert from "node:assert";
 
-import { LiveSession } from "../src/live.js";
+import { LiveSession } from "../dist/live.js";
 
 test("LiveSession - Binary Frame Encryption & Decryption", async () => {
     const key = new Uint8Array(32);
@@ -74,7 +74,7 @@ test("LiveVoiceSession - Audio Frame Encryption & Decryption", async () => {
     const key = new Uint8Array(32);
     crypto.getRandomValues(key);
 
-    const voiceSession = new (await import("../src/live.js")).LiveVoiceSession(key, "opus", 48000, 2);
+    const voiceSession = new (await import("../dist/live.js")).LiveVoiceSession(key, "opus", 48000, 2);
     assert.equal(voiceSession.codec, "opus");
     assert.equal(voiceSession.sampleRate, 48000);
     assert.equal(voiceSession.channels, 2);
@@ -102,8 +102,8 @@ test("LiveVoiceSession - Audio Frame Encryption & Decryption", async () => {
 });
 
 test("UXSPClient - Live Voice Package Negotiation", async () => {
-    const { UXSPClient } = await import("../src/client.js");
-    const { Identity } = await import("../src/identity.js");
+    const { UXSPClient } = await import("../dist/client.js");
+    const { Identity } = await import("../dist/identity.js");
 
     const sender = await Identity.create("Alice", "client");
     const receiver = await Identity.create("Bob", "server");

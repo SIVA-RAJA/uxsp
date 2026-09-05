@@ -244,7 +244,7 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
                         )
                         yield out_pkg.to_json() + "\n"
 
-                encrypted_response = StreamingResponse(
+                encrypted_response: Response = StreamingResponse(
                     encrypt_stream(),  # type: ignore[no-untyped-call]
                     status_code=response.status_code,
                     media_type="application/x-ndjson"

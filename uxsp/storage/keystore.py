@@ -48,7 +48,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Generator
 from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
-from typing import IO, Any
+from typing import IO, Any, TypeAlias
 
 # ── Portable file-locking shim ────────────────────────────────────────────────
 # fcntl is POSIX-only; on Windows we fall back to msvcrt.locking.
@@ -89,7 +89,7 @@ else:
 from uxsp.core.identity import PublicCard
 from uxsp.core.signing import SignedCard
 
-CardType = PublicCard | SignedCard
+CardType: TypeAlias = PublicCard | SignedCard
 
 psycopg2: Any = None
 psycopg2_pool: Any = None

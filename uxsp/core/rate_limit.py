@@ -663,9 +663,12 @@ class AsyncGuardedHandshake:
                 raise ValueError("Replay detected: nonce already seen.")
             await self._nonce_store.mark_used(nonce)
 
-        class DummyStore:
-            def mark_used(self, n: str, ttl_seconds: int = 0) -> bool: return True
-            def is_seen(self, n: str) -> bool: return False
+        from uxsp.core.nonce import NonceStore
+
+        class DummyStore(NonceStore):
+            def mark_used(self, nonce: str, ttl_seconds: int = 300) -> bool: return True
+            def is_seen(self, nonce: str) -> bool: return False
+            def cleanup(self) -> int: return 0
 
         return Handshake.respond(
             responder=self._responder,
