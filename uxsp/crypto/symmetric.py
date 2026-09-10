@@ -32,18 +32,32 @@ KEY_SIZE: int = 32
 NONCE_SIZE: int = 12
 
 
+def zeroize(buf: bytearray | None) -> None:
+    """
+    Explicitly overwrite a mutable bytearray buffer with zeroes.
+
+    Used to scrub intermediate secrets (ephemeral keys, shared secrets, derived keys)
+    from memory to reduce exposure to memory dumps and side-channel inspection.
+    """
+    if buf is not None and isinstance(buf, bytearray):
+        for i in range(len(buf)):
+            buf[i] = 0
+
+
 def generate_symmetric_key() -> bytes:
     """Generate a random 256-bit AES key."""
     return os.urandom(KEY_SIZE)
 
 
-def encrypt(data: bytes, key: bytes, associated_data: bytes | None = None) -> dict[str, bytes]:
+def encrypt(
+    data: bytes, key: bytes | bytearray, associated_data: bytes | None = None
+) -> dict[str, bytes]:
     """
     Encrypt data with AES-256-GCM using a fresh random nonce.
 
     Parameters:
         data            — Plaintext bytes to encrypt.
-        key             — 32-byte AES-256 key.
+        key             — 32-byte AES-256 key (bytes or bytearray).
         associated_data — Optional bytes authenticated but not encrypted (AEAD).
 
     Returns a dict with:
@@ -53,8 +67,8 @@ def encrypt(data: bytes, key: bytes, associated_data: bytes | None = None) -> di
     Raises TypeError for wrong argument types.  Raises ValueError if key is not 32 bytes.
     """
 
-    if not isinstance(key, bytes):
-        raise TypeError("key must be bytes.")
+    if not isinstance(key, (bytes, bytearray)):
+        raise TypeError("key must be bytes or bytearray.")
     if not isinstance(data, bytes):
         raise TypeError("data must be bytes. Use data.encode() for strings.")
     if len(key) != KEY_SIZE:
@@ -63,7 +77,7 @@ def encrypt(data: bytes, key: bytes, associated_data: bytes | None = None) -> di
         raise TypeError("associated_data must be bytes or None.")
 
     nonce = os.urandom(NONCE_SIZE)
-    aesgcm = AESGCM(key)
+    aesgcm = AESGCM(bytes(key))
     ciphertext = aesgcm.encrypt(nonce, data, associated_data)
 
     return {
@@ -73,7 +87,10 @@ def encrypt(data: bytes, key: bytes, associated_data: bytes | None = None) -> di
 
 
 def decrypt(
-    ciphertext: bytes, nonce: bytes, key: bytes, associated_data: bytes | None = None
+    ciphertext: bytes,
+    nonce: bytes,
+    key: bytes | bytearray,
+    associated_data: bytes | None = None,
 ) -> bytes:
     """
     Decrypt and verify AES-256-GCM ciphertext.
@@ -81,7 +98,7 @@ def decrypt(
     Parameters:
         ciphertext      — Encrypted bytes (output of encrypt()).
         nonce           — 12-byte nonce (output of encrypt()).
-        key             — 32-byte AES-256 key.
+        key             — 32-byte AES-256 key (bytes or bytearray).
         associated_data — Must match what was passed to encrypt(); default None.
 
     Returns the original plaintext bytes.  Raises ValueError with a clear message
@@ -89,8 +106,8 @@ def decrypt(
     Raises TypeError for wrong argument types.
     """
 
-    if not isinstance(key, bytes):
-        raise TypeError("key must be bytes.")
+    if not isinstance(key, (bytes, bytearray)):
+        raise TypeError("key must be bytes or bytearray.")
     if not isinstance(nonce, bytes):
         raise TypeError("nonce must be bytes.")
     if not isinstance(ciphertext, bytes):
@@ -103,7 +120,7 @@ def decrypt(
     if len(nonce) != NONCE_SIZE:
         raise ValueError(f"Nonce must be {NONCE_SIZE} bytes, got {len(nonce)}")
 
-    aesgcm = AESGCM(key)
+    aesgcm = AESGCM(bytes(key))
     try:
         return aesgcm.decrypt(nonce, ciphertext, associated_data)
     except InvalidTag as e:
@@ -113,7 +130,9 @@ def decrypt(
         ) from e
 
 
-def encrypt_str(text: str, key: bytes, associated_data: bytes | None = None) -> dict[str, str]:
+def encrypt_str(
+    text: str, key: bytes | bytearray, associated_data: bytes | None = None
+) -> dict[str, str]:
     """
     Encrypt a plain-text string and return hex-encoded ciphertext and nonce.
 
@@ -122,8 +141,8 @@ def encrypt_str(text: str, key: bytes, associated_data: bytes | None = None) -> 
     Use decrypt_str() to reverse.  Raises TypeError for wrong argument types.
     """
 
-    if not isinstance(key, bytes):
-        raise TypeError("key must be bytes.")
+    if not isinstance(key, (bytes, bytearray)):
+        raise TypeError("key must be bytes or bytearray.")
     if not isinstance(text, str):
         raise TypeError("text must be str.")
     if associated_data is not None and not isinstance(associated_data, bytes):
@@ -140,7 +159,10 @@ def encrypt_str(text: str, key: bytes, associated_data: bytes | None = None) -> 
 
 
 def decrypt_str(
-    ciphertext_hex: str, nonce_hex: str, key: bytes, associated_data: bytes | None = None
+    ciphertext_hex: str,
+    nonce_hex: str,
+    key: bytes | bytearray,
+    associated_data: bytes | None = None,
 ) -> str:
     """
     Decrypt hex-encoded AES-256-GCM ciphertext back to a plain string.
@@ -150,8 +172,8 @@ def decrypt_str(
     length is wrong or the authentication tag is invalid.
     """
 
-    if not isinstance(key, bytes):
-        raise TypeError("key must be bytes.")
+    if not isinstance(key, (bytes, bytearray)):
+        raise TypeError("key must be bytes or bytearray.")
     if not isinstance(nonce_hex, str):
         raise TypeError("nonce_hex must be str.")
     if not isinstance(ciphertext_hex, str):

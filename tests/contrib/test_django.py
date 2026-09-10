@@ -354,3 +354,38 @@ def test_django_protect_missing_middleware(server_identity):
 
     with pytest.raises(RuntimeError, match="@protect_view decorator requires UXSPDjangoMiddleware"):
         broken_view(request)
+
+
+def test_django_middleware_max_request_size_and_content_type(server_identity):
+    def view_func(request):
+        return HttpResponse(b"ok")
+
+    middleware = UXSPDjangoMiddleware(view_func)
+    middleware.identity = server_identity
+    middleware.max_request_size = 100
+
+    factory = RequestFactory()
+
+    # Content-Length exceeds max_request_size -> 413
+    req_cl = factory.post("/api/test", data=b"short", content_type="application/json", CONTENT_LENGTH="500")
+    res_cl = middleware(req_cl)
+    assert res_cl.status_code == 413
+    assert json.loads(res_cl.content.decode())["error"] == "Payload Too Large"
+
+    # Body exceeds max_request_size without Content-Length -> 413
+    req_body = factory.post("/api/test", data=b"a" * 150, content_type="application/octet-stream")
+    del req_body.META["CONTENT_LENGTH"]
+    res_body = middleware(req_body)
+    assert res_body.status_code == 413
+    assert json.loads(res_body.content.decode())["error"] == "Payload Too Large"
+
+    # Invalid Content-Length is ignored gracefully
+    req_bad_cl = factory.post("/api/test", data=b"short", content_type="application/json", CONTENT_LENGTH="bad_int")
+    res_bad_cl = middleware(req_bad_cl)
+    assert res_bad_cl.status_code == 200
+
+    # Strict Content-Type: "text/plain; application/uxsp+json" should not match UXSP content type
+    req_ct = factory.post("/api/test", data=b'{"hello": "world"}', content_type="text/plain; application/uxsp+json")
+    res_ct = middleware(req_ct)
+    assert res_ct.status_code == 200
+

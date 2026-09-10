@@ -54,7 +54,7 @@ from .pqc import (
     pqc_sign,
     pqc_verify,
 )
-from .symmetric import decrypt, encrypt
+from .symmetric import decrypt, encrypt, zeroize
 
 # ═════════════════════════════════════════════════════════════
 # ERRORS
@@ -294,11 +294,19 @@ def extract_public_keys(keypair: dict[str, dict[str, Any]]) -> dict[str, bytes]:
 
 
 def bind_fields(*fields: bytes) -> bytes:
-    """Length-prefixed concatenation. Prevents length confusion attacks."""
+    """
+    Length-prefixed concatenation. Prevents length confusion attacks.
+
+    Each field length is encoded as a big-endian 32-bit unsigned integer (>I),
+    supporting field lengths up to 4 GiB (4,294,967,295 bytes).
+    Raises ValueError if any field length exceeds 4 GiB.
+    """
     result = b""
     for f in fields:
         if not isinstance(f, bytes):
             raise TypeError(f"bind_fields: all fields must be bytes, got {type(f).__name__!r}")
+        if len(f) > 0xFFFFFFFF:
+            raise ValueError(f"bind_fields: field length ({len(f)} bytes) exceeds maximum 4 GiB limit (32-bit uint).")
         result += struct.pack(">I", len(f)) + f
     return result
 
@@ -326,12 +334,26 @@ def hybrid_sender_exchange(recipient_public_keys: dict[str, bytes]) -> dict[str,
     )
     kem_result = encapsulate(recipient_public_keys["kem_pub"])
     pqc_secret = kem_result["shared_secret"]
-    final_key = derive_key(
-        ikm=classical_secret + pqc_secret,
-        salt=ephemeral["public_key"],  # Salt with ephemeral public key (Issue 4)
-        info=b"UXSP-hybrid-key-exchange-v1",
-        length=32,
-    )
+
+    classical_buf = bytearray(classical_secret)
+    pqc_buf = bytearray(pqc_secret)
+    combined_buf = bytearray(classical_buf + pqc_buf)
+    try:
+        final_key = derive_key(
+            ikm=combined_buf,
+            # Deliberate design choice: ephemeral public key is used as the HKDF salt.
+            # Per RFC 5869, salts in HKDF can be public values; binding the
+            # fresh ephemeral key provides domain separation and per-exchange entropy
+            # without requiring transmission of an extra salt field across the wire.
+            salt=ephemeral["public_key"],
+            info=b"UXSP-hybrid-key-exchange-v1",
+            length=32,
+        )
+    finally:
+        zeroize(classical_buf)
+        zeroize(pqc_buf)
+        zeroize(combined_buf)
+
     return {
         "shared_key": final_key,
         "ephemeral_pub": ephemeral["public_key"],
@@ -366,12 +388,20 @@ def hybrid_recipient_exchange(
     except KeyError as exc:
         raise ValueError(f"my_private_keys missing required key: {exc}") from exc
 
-    return derive_key(
-        ikm=classical_secret + pqc_secret,
-        salt=ephemeral_pub,
-        info=b"UXSP-hybrid-key-exchange-v1",
-        length=32,
-    )
+    classical_buf = bytearray(classical_secret)
+    pqc_buf = bytearray(pqc_secret)
+    combined_buf = bytearray(classical_buf + pqc_buf)
+    try:
+        return derive_key(
+            ikm=combined_buf,
+            salt=ephemeral_pub,
+            info=b"UXSP-hybrid-key-exchange-v1",
+            length=32,
+        )
+    finally:
+        zeroize(classical_buf)
+        zeroize(pqc_buf)
+        zeroize(combined_buf)
 
 
 # ═════════════════════════════════════════════════════════════
@@ -427,7 +457,7 @@ def hybrid_verify(
 
     try:
         signing_pub = sender_public_keys["signing_pub"]
-        pqc_sig_pub = sender_public_keys["pqc_sig_pub"]
+        pqc_sig_pub = sender_public_keys["pqc_sig_pub"] if not allow_classical_only else b""
     except KeyError as exc:
         raise EnvelopeValidationError(f"sender_public_keys missing required key: {exc}") from exc
 

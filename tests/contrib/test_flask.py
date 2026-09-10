@@ -320,3 +320,44 @@ def test_flask_protect_missing_middleware(server_identity):
 
     with pytest.raises(RuntimeError, match="@protect_route decorator requires UXSPFlaskMiddleware"):
         test_client.post("/api/broken", json={"hello": "world"})
+
+
+def test_flask_middleware_max_request_size_and_content_type(server_identity):
+    from flask import request
+
+    app = Flask("test_flask_max_req")
+    app.testing = True
+    UXSPFlaskMiddleware(app, identity=server_identity, max_request_size=100)
+
+    @app.route("/api/test", methods=["POST"])
+    def test_endpoint():
+        return jsonify({"size": len(request.get_data())})
+
+    test_client = app.test_client()
+
+    # Content-Length exceeds max_request_size -> 413
+    res_cl = test_client.post("/api/test", data=b"short", environ_overrides={"CONTENT_LENGTH": "500"})
+    assert res_cl.status_code == 413
+    assert res_cl.json["error"] == "Payload Too Large"
+
+    # Invalid Content-Length is ignored gracefully
+    res_bad_cl = test_client.post("/api/test", data=b"short", environ_overrides={"CONTENT_LENGTH": "not_an_int"})
+    assert res_bad_cl.status_code == 200
+
+    # Body exceeds max_request_size without Content-Length header -> 413
+    mw = app.extensions["uxsp"] if "uxsp" in getattr(app, "extensions", {}) else None
+    if mw is None:
+        mw = UXSPFlaskMiddleware(identity=server_identity, max_request_size=100)
+    with app.test_request_context("/api/test", method="POST"):
+        req_obj = request._get_current_object()
+        req_obj._cached_data = b"a" * 150
+        res = mw._before_request()
+        assert res is not None
+        _, code = res
+        assert code == 413
+
+    # Strict Content-Type: "text/plain; application/uxsp+json" should not match UXSP content type
+    res_ct = test_client.post("/api/test", data=b'{"hello": "world"}', headers={"Content-Type": "text/plain; application/uxsp+json"})
+    assert res_ct.status_code == 200
+
+

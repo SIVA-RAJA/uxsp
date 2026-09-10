@@ -232,11 +232,15 @@ class TestStateTransitions:
         s._activate()
         s.revoke()
         assert s.state == SessionState.REVOKED
+        assert all(b == 0 for b in s._send_key)
+        assert all(b == 0 for b in s._recv_key)
 
     def test_revoke_on_pending_works(self):
         s = make_session()
         s.revoke()
         assert s.state == SessionState.REVOKED
+        assert all(b == 0 for b in s._send_key)
+        assert all(b == 0 for b in s._recv_key)
 
 
 # ──────────────────────────────────────────────────────────────────────────────

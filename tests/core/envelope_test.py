@@ -746,6 +746,21 @@ class TestEquality:
         e2 = _make_envelope(ciphertext="ct2", envelope_nonce="X")
         assert e1 != e2
 
+    def test_not_equal_different_timestamp(self):
+        e1 = _make_envelope(timestamp=1000)
+        e2 = _make_envelope(timestamp=2000)
+        assert e1 != e2
+
+    def test_not_equal_different_signatures(self):
+        e1 = _make_envelope(classical_sig="aa" * 64)
+        e2 = _make_envelope(classical_sig="bb" * 64)
+        assert e1 != e2
+
+    def test_not_equal_different_ephemeral_pub(self):
+        e1 = _make_envelope(ephemeral_pub="aa" * 32)
+        e2 = _make_envelope(ephemeral_pub="bb" * 32)
+        assert e1 != e2
+
     def test_not_equal_to_non_envelope(self):
         """isinstance check: returns False for non-Envelope objects."""
         e = _make_envelope()

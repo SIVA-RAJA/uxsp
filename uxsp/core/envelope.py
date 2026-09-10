@@ -281,9 +281,12 @@ class Envelope:
         """
         Parse and construct an Envelope from a JSON string.
 
-        Performs a fast character-count check before decoding to avoid spending
-        CPU on parsing a string that is clearly too large. Then encodes to UTF-8
-        bytes and delegates to from_dict().
+        Multi-stage size validation:
+        1. Fast preliminary character-count check on `json_str` avoids CPU and
+           memory allocation overhead of UTF-8 encoding strings that are already
+           trivially larger than `limit`.
+        2. Exact byte-length check on `raw` catches multi-byte UTF-8 sequences.
+        3. Parsed payload is then validated and constructed via `from_dict()`.
         """
         limit = max_bytes if max_bytes is not None else cls.MAX_BYTES
 
@@ -428,11 +431,30 @@ class Envelope:
         if not isinstance(other, Envelope):
             return False
         return (
-            self.envelope_nonce == other.envelope_nonce
+            self.version == other.version
             and self.sender_id == other.sender_id
             and self.recipient_id == other.recipient_id
+            and self.timestamp == other.timestamp
+            and self.envelope_nonce == other.envelope_nonce
             and self.ciphertext == other.ciphertext
+            and self.nonce == other.nonce
+            and self.ephemeral_pub == other.ephemeral_pub
+            and self.kem_ciphertext == other.kem_ciphertext
+            and self.classical_sig == other.classical_sig
+            and self.pqc_sig == other.pqc_sig
         )
 
     def __hash__(self) -> int:
-        return hash((self.envelope_nonce, self.sender_id, self.recipient_id, self.ciphertext))
+        return hash((
+            self.version,
+            self.sender_id,
+            self.recipient_id,
+            self.timestamp,
+            self.envelope_nonce,
+            self.ciphertext,
+            self.nonce,
+            self.ephemeral_pub,
+            self.kem_ciphertext,
+            self.classical_sig,
+            self.pqc_sig,
+        ))

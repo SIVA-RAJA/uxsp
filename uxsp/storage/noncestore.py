@@ -384,6 +384,8 @@ class PostgresNonceStore(NonceStore):
                     )
                     inserted = bool(cur.fetchone() is not None)
 
+                    # Intentional performance optimization: probabilistic sampling (~1/16 frequency for hex nonces)
+                    # prevents running an additional SELECT reltuples against pg_class on every single insert.
                     if inserted and nonce.endswith("0"):
                         cur.execute(
                             "SELECT reltuples FROM pg_class WHERE relname = %s", (self._table,)

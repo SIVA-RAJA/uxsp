@@ -123,6 +123,17 @@ class CardNotYetValidError(SigningError):
     pass
 
 
+class RevokedCardError(SigningError):
+    """
+    SignedCard has been revoked by an authority or CRL.
+
+    The card must be rejected even if its signature is valid and within
+    its time window.
+    """
+
+    pass
+
+
 # ─────────────────────────────────────────────
 # TRUST ANCHOR
 # ─────────────────────────────────────────────
@@ -223,6 +234,66 @@ class TrustAnchor:
             issuer_name=self._identity.name,
             not_before=nb,
             not_after=na,
+            classical_sig=bytes.fromhex(sigs["classical_sig"]),
+            pqc_sig=bytes.fromhex(sigs["pqc_sig"]),
+        )
+
+    def issue_crl(
+        self,
+        revoked_certs: list[SignedCard | dict[str, Any] | str] | dict[str, dict[str, Any]] | None = None,
+        crl_number: int = 1,
+        issued_at: int | None = None,
+    ) -> CertificateRevocationList:
+        """
+        Sign and issue a Certificate Revocation List (CRL).
+
+        Parameters:
+            revoked_certs: Either a dict mapping cert_id -> {"revocation_date": int, "reason": str},
+                           a list of SignedCards, dicts (with "cert_id", "revocation_date", "reason"),
+                           or cert_id strings.
+            crl_number:    Sequential CRL number (defaults to 1).
+            issued_at:     Unix timestamp (defaults to current time).
+        """
+        ts = issued_at if issued_at is not None else int(time.time())
+        certs_dict: dict[str, dict[str, Any]] = {}
+
+        if revoked_certs:
+            if isinstance(revoked_certs, list):
+                for entry in revoked_certs:
+                    if isinstance(entry, SignedCard):
+                        cid = entry.cert_id
+                        r_date = ts
+                        reason = "unspecified"
+                    elif isinstance(entry, dict):
+                        cid = entry["cert_id"]
+                        r_date = int(entry.get("revocation_date", ts))
+                        reason = str(entry.get("reason", "unspecified"))
+                    elif isinstance(entry, str):
+                        cid = entry
+                        r_date = ts
+                        reason = "unspecified"
+                    else:
+                        raise ValueError(f"Invalid entry in revoked_certs: {entry!r}")
+                    certs_dict[cid] = {"revocation_date": r_date, "reason": reason}
+            elif isinstance(revoked_certs, dict):
+                for cid, info in revoked_certs.items():
+                    r_date = int(info.get("revocation_date", ts))
+                    reason = str(info.get("reason", "unspecified"))
+                    certs_dict[cid] = {"revocation_date": r_date, "reason": reason}
+
+        entries = [
+            (cid, info["revocation_date"], info["reason"])
+            for cid, info in certs_dict.items()
+        ]
+        signable = _crl_signable(self._identity.entity_id, crl_number, ts, entries)
+        sigs = hybrid_sign(signable, self._identity.keypair)
+
+        return CertificateRevocationList(
+            issuer_id=self._identity.entity_id,
+            issuer_name=self._identity.name,
+            crl_number=crl_number,
+            issued_at=ts,
+            revoked_certs=certs_dict,
             classical_sig=bytes.fromhex(sigs["classical_sig"]),
             pqc_sig=bytes.fromhex(sigs["pqc_sig"]),
         )
@@ -433,6 +504,124 @@ class SignedCard:
 
 
 # ─────────────────────────────────────────────
+# CERTIFICATE REVOCATION LIST (CRL)
+# ─────────────────────────────────────────────
+
+
+class CertificateRevocationList:
+    """
+    A signed Certificate Revocation List (CRL) issued by a TrustAnchor.
+
+    Allows a TrustAnchor to revoke SignedCards before their not_after date.
+    Can be distributed out-of-band or via directory/signaling and added to a
+    TrustStore.
+    """
+
+    def __init__(
+        self,
+        issuer_id: str,
+        issuer_name: str,
+        crl_number: int,
+        issued_at: int,
+        revoked_certs: dict[str, dict[str, Any]],
+        classical_sig: bytes,
+        pqc_sig: bytes,
+    ) -> None:
+        self.issuer_id = issuer_id
+        self.issuer_name = issuer_name
+        self.crl_number = crl_number
+        self.issued_at = issued_at
+        self.revoked_certs = revoked_certs
+        self.classical_sig = classical_sig
+        self.pqc_sig = pqc_sig
+
+    def is_revoked(self, cert_id: str) -> bool:
+        """Return True if cert_id is revoked in this CRL."""
+        return cert_id in self.revoked_certs
+
+    def get_revocation_info(self, cert_id: str) -> dict[str, Any] | None:
+        """Return revocation info for cert_id or None."""
+        return self.revoked_certs.get(cert_id)
+
+    def verify(self, anchor_public_keys: dict[str, bytes]) -> bool:
+        """
+        Verify this CRL against the anchor's public keys.
+        Raises InvalidCardSignatureError if signature does not verify or is malformed.
+        """
+        entries = [
+            (cid, int(info.get("revocation_date", self.issued_at)), str(info.get("reason", "unspecified")))
+            for cid, info in self.revoked_certs.items()
+        ]
+        signable = _crl_signable(self.issuer_id, self.crl_number, self.issued_at, entries)
+        sigs: dict[str, str] = {
+            "classical_sig": self.classical_sig.hex(),
+            "pqc_sig": self.pqc_sig.hex(),
+        }
+        try:
+            ok = hybrid_verify(signable, sigs, anchor_public_keys)
+        except EnvelopeValidationError as exc:
+            raise InvalidCardSignatureError(f"Signature on CRL from '{self.issuer_name}' is malformed: {exc}") from exc
+
+        if not ok:
+            raise InvalidCardSignatureError(
+                f"Signature on CRL #{self.crl_number} from '{self.issuer_name}' does not verify."
+            )
+        return True
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "issuer_id": self.issuer_id,
+            "issuer_name": self.issuer_name,
+            "crl_number": self.crl_number,
+            "issued_at": self.issued_at,
+            "revoked_certs": self.revoked_certs,
+            "classical_sig": self.classical_sig.hex(),
+            "pqc_sig": self.pqc_sig.hex(),
+        }
+
+    def to_json(self, indent: int | None = None) -> str:
+        return json.dumps(self.to_dict(), indent=indent)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> CertificateRevocationList:
+        return cls(
+            issuer_id=data["issuer_id"],
+            issuer_name=data["issuer_name"],
+            crl_number=int(data["crl_number"]),
+            issued_at=int(data["issued_at"]),
+            revoked_certs=data.get("revoked_certs", {}),
+            classical_sig=bytes.fromhex(data["classical_sig"]),
+            pqc_sig=bytes.fromhex(data["pqc_sig"]),
+        )
+
+    @classmethod
+    def from_json(cls, s: str) -> CertificateRevocationList:
+        return cls.from_dict(json.loads(s))
+
+    def __repr__(self) -> str:
+        return (
+            f"CertificateRevocationList(issuer={self.issuer_name!r}, "
+            f"crl_number={self.crl_number}, count={len(self.revoked_certs)})"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, CertificateRevocationList):
+            return False
+        return (
+            self.issuer_id == other.issuer_id
+            and self.crl_number == other.crl_number
+            and self.issued_at == other.issued_at
+            and self.revoked_certs == other.revoked_certs
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.issuer_id, self.crl_number, self.issued_at))
+
+
+CRL = CertificateRevocationList
+
+
+# ─────────────────────────────────────────────
 # TRUST STORE
 # ─────────────────────────────────────────────
 
@@ -446,23 +635,25 @@ class TrustStore:
         trusting a peer’s SignedCard, the receiver calls TrustStore.verify()
         which:
           1. Looks up the issuer in the store (raises UntrustedCardError if absent).
-          2. Checks the card’s validity window (raises Expired/CardNotYetValidError).
-          3. Verifies the hybrid (Ed25519 + ML-DSA) signature against the anchor’s
+          2. Checks if the card has been revoked via CRL or direct revocation (raises RevokedCardError).
+          3. Checks the card’s validity window (raises Expired/CardNotYetValidError).
+          4. Verifies the hybrid (Ed25519 + ML-DSA) signature against the anchor’s
              public keys (raises InvalidCardSignatureError on failure).
-          4. Optionally checks that the card’s entity_id matches an expected value
+          5. Optionally checks that the card’s entity_id matches an expected value
              to guard against card-substitution attacks.
 
     Thread safety:
-        All reads and writes to the internal anchor dictionary are protected by
-        a threading.Lock().
+        All reads and writes to the internal anchor dictionary and revocation registry
+        are protected by a threading.Lock().
 
     Persistence:
         save() / load() / from_anchors() for JSON serialisation and convenience
         construction.  save() uses an exclusive file lock to prevent corruption
-        from concurrent writers.
+        from concurrent writers and creates files with 0o600 permissions.
     """
     def __init__(self) -> None:
         self._anchors: dict[str, PublicAnchor] = {}
+        self._revoked_certs: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
 
     def add(self, anchor: PublicAnchor) -> None:
@@ -484,6 +675,66 @@ class TrustStore:
     def anchor_ids(self) -> list[str]:
         with self._lock:
             return list(self._anchors.keys())
+
+    def revoke(
+        self,
+        cert_id: str,
+        reason: str = "unspecified",
+        revocation_date: int | None = None,
+    ) -> None:
+        """Directly revoke a certificate in this trust store."""
+        with self._lock:
+            self._revoked_certs[cert_id] = {
+                "revocation_date": revocation_date if revocation_date is not None else int(time.time()),
+                "reason": reason,
+            }
+
+    def unrevoke(self, cert_id: str) -> None:
+        """Remove a certificate from the revocation registry."""
+        with self._lock:
+            self._revoked_certs.pop(cert_id, None)
+
+    def is_revoked(self, cert_id: str) -> bool:
+        """Return True if cert_id has been revoked in this trust store."""
+        with self._lock:
+            return cert_id in self._revoked_certs
+
+    def get_revocation_info(self, cert_id: str) -> dict[str, Any] | None:
+        """Return revocation info for cert_id or None."""
+        with self._lock:
+            return self._revoked_certs.get(cert_id)
+
+    @property
+    def revoked_cert_ids(self) -> list[str]:
+        """Return all revoked certificate IDs."""
+        with self._lock:
+            return list(self._revoked_certs.keys())
+
+    def add_crl(self, crl: CertificateRevocationList, verify_signature: bool = True) -> None:
+        """
+        Incorporate a signed CRL into this trust store.
+
+        If verify_signature is True, ensures the CRL issuer is in this trust store
+        and verifies the CRL's dual hybrid signature.
+        """
+        with self._lock:
+            anchor = self._anchors.get(crl.issuer_id)
+            if verify_signature:
+                if anchor is None:
+                    raise UntrustedCardError(
+                        f"CRL issuer '{crl.issuer_id[:8]}...' "
+                        f"({crl.issuer_name!r}) is not in the trust store."
+                    )
+                anchor_public_keys = dict(anchor.public_keys)
+            else:
+                anchor_public_keys = {}
+
+        if verify_signature:
+            crl.verify(anchor_public_keys)
+
+        with self._lock:
+            for cid, info in crl.revoked_certs.items():
+                self._revoked_certs[cid] = dict(info)
 
     def verify(
         self, signed_card: SignedCard, now: int | None = None, expected_entity_id: str | None = None
@@ -512,6 +763,14 @@ class TrustStore:
             anchor_public_keys = dict(anchor.public_keys)
 
             anchor_name = anchor.name
+
+        if self.is_revoked(signed_card.cert_id):
+            info = self.get_revocation_info(signed_card.cert_id)
+            reason = info.get("reason", "unspecified") if info else "unspecified"
+            raise RevokedCardError(
+                f"SignedCard for '{signed_card.card.name}' "
+                f"(cert {signed_card.cert_id[:8]}...) has been revoked: {reason}."
+            )
 
         if expected_entity_id is not None and signed_card.card.entity_id != expected_entity_id:
             raise UntrustedCardError(
@@ -558,7 +817,10 @@ class TrustStore:
 
     def to_dict(self) -> dict[str, Any]:
         with self._lock:
-            return {"anchors": [a.to_dict() for a in self._anchors.values()]}
+            return {
+                "anchors": [a.to_dict() for a in self._anchors.values()],
+                "revoked_certs": dict(self._revoked_certs),
+            }
 
     def to_json(self, indent: int = 2) -> str:
         return json.dumps(self.to_dict(), indent=indent)
@@ -569,7 +831,14 @@ class TrustStore:
         p.parent.mkdir(parents=True, exist_ok=True)
         lock_path = Path(str(path) + ".lock")
 
-        with open(lock_path, "a") as lf:
+        if sys.platform != "win32":
+            lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_APPEND, 0o600)
+            os.chmod(lock_path, 0o600)
+            lock_file = open(lock_fd, "a")
+        else:
+            lock_file = open(lock_path, "a")
+
+        with lock_file as lf:
             _lock_exclusive(lf)
             try:
                 tmp_fd, tmp_path = tempfile.mkstemp(dir=str(p.parent))
@@ -577,7 +846,7 @@ class TrustStore:
                     with os.fdopen(tmp_fd, "w") as f:
                         f.write(self.to_json())
                     if sys.platform != "win32":
-                        os.chmod(tmp_path, 0o644)
+                        os.chmod(tmp_path, 0o600)
                     os.replace(tmp_path, path)
                 except Exception:
                     with contextlib.suppress(OSError):
@@ -595,6 +864,12 @@ class TrustStore:
         store = cls()
         for a in data.get("anchors", []):
             store.add(PublicAnchor.from_dict(a))
+        for cid, info in data.get("revoked_certs", {}).items():
+            store.revoke(
+                cid,
+                reason=info.get("reason", "unspecified"),
+                revocation_date=info.get("revocation_date"),
+            )
         return store
 
     @classmethod
@@ -616,7 +891,7 @@ class TrustStore:
 
 
 # ─────────────────────────────────────────────
-# INTERNAL — canonical signable bytes for a card
+# INTERNAL — canonical signable bytes
 # ─────────────────────────────────────────────
 
 
@@ -643,4 +918,29 @@ def _card_signable(card: PublicCard, not_before: int, not_after: int, cert_id: s
         str(not_before).encode(),
         str(not_after).encode(),
         cert_id.encode(),
+    )
+
+
+def _crl_signable(
+    issuer_id: str,
+    crl_number: int,
+    issued_at: int,
+    revoked_certs: list[tuple[str, int, str]],
+) -> bytes:
+    """
+    Produce the canonical length-prefixed byte string that is signed by the
+    TrustAnchor when issuing a CRL and verified by TrustStore / CRL.verify().
+
+    Binds: UXSP-CRL-1, issuer_id, crl_number, issued_at, and sorted revoked cert entries.
+    """
+    entries_bytes: list[bytes] = []
+    for cert_id, rev_date, reason in sorted(revoked_certs, key=lambda x: x[0]):
+        entries_bytes.append(f"{cert_id}:{rev_date}:{reason}".encode())
+
+    return bind_fields(
+        b"UXSP-CRL-1",
+        issuer_id.encode(),
+        str(crl_number).encode(),
+        str(issued_at).encode(),
+        *entries_bytes,
     )

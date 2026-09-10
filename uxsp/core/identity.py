@@ -41,7 +41,7 @@ from uxsp.crypto.hybrid import (
     seal,
     verify_envelope,
 )
-from uxsp.crypto.symmetric import decrypt, encrypt
+from uxsp.crypto.symmetric import decrypt, encrypt, zeroize
 
 # ─────────────────────────────────────────────
 # EXCEPTIONS & ROLE VALIDATION
@@ -335,11 +335,18 @@ class Identity:
             },
         }
 
-        enc = encrypt(
-            private_data,
-            kdf_result["key"],
-            associated_data=_identity_associated_data(payload),
-        )
+        k_key = bytearray(kdf_result["key"])
+        priv_buf = bytearray(private_data)
+        try:
+            enc = encrypt(
+                bytes(priv_buf),
+                k_key,
+                associated_data=_identity_associated_data(payload),
+            )
+        finally:
+            zeroize(k_key)
+            zeroize(priv_buf)
+
         payload["encrypted_private"] = {
             "ciphertext": enc["ciphertext"].hex(),
             "nonce": enc["nonce"].hex(),
@@ -390,16 +397,24 @@ class Identity:
         except (KeyError, TypeError, ValueError) as e:
             raise ValueError("encrypted_private block is malformed.") from e
 
+        k_key = bytearray(kdf_result["key"])
         try:
-            private_data = decrypt(ct, nonce, kdf_result["key"], associated_data=associated_data)
-        except Exception as exc:
-            raise ValueError("Wrong password or corrupted file.") from exc
+            try:
+                raw_priv = decrypt(ct, nonce, k_key, associated_data=associated_data)
+            except Exception as exc:
+                raise ValueError("Wrong password or corrupted file.") from exc
 
-        try:
-            priv = json.loads(private_data.decode())
-            pub = payload["public_keys"]
-        except (UnicodeDecodeError, json.JSONDecodeError, KeyError) as e:
-            raise ValueError("private key payload is malformed.") from e
+            priv_buf = bytearray(raw_priv)
+            try:
+                try:
+                    priv = json.loads(priv_buf.decode())
+                    pub = payload["public_keys"]
+                except (UnicodeDecodeError, json.JSONDecodeError, KeyError) as e:
+                    raise ValueError("private key payload is malformed.") from e
+            finally:
+                zeroize(priv_buf)
+        finally:
+            zeroize(k_key)
 
         try:
             keypair = {
@@ -498,7 +513,11 @@ class Identity:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Identity):
             return NotImplemented
-        return self.entity_id == other.entity_id and self.key_version == other.key_version
+        return (
+            self.entity_id == other.entity_id
+            and self.key_version == other.key_version
+            and self.keypair == other.keypair
+        )
 
 
 # ─────────────────────────────────────────────

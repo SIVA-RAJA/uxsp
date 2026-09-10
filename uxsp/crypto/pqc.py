@@ -109,6 +109,13 @@ def _detect_kem() -> str:
     available = oqs.get_enabled_kem_mechanisms()
     for candidate in ("ML-KEM-768", "Kyber768"):
         if candidate in available:
+            if candidate == "Kyber768":
+                warnings.warn(
+                    "PQC KEM using fallback 'Kyber768' instead of standard 'ML-KEM-768'. "
+                    "This may cause interoperability issues with deployments requiring standard ML-KEM-768.",
+                    UserWarning,
+                    stacklevel=2,
+                )
             return candidate
     raise RuntimeError(f"No supported KEM algorithm found. Available: {available}")
 
@@ -123,6 +130,13 @@ def _detect_sig() -> str:
     available = oqs.get_enabled_sig_mechanisms()
     for candidate in ("ML-DSA-65", "Dilithium3"):
         if candidate in available:
+            if candidate == "Dilithium3":
+                warnings.warn(
+                    "PQC signature using fallback 'Dilithium3' instead of standard 'ML-DSA-65'. "
+                    "This may cause interoperability issues with deployments requiring standard ML-DSA-65.",
+                    UserWarning,
+                    stacklevel=2,
+                )
             return candidate
     raise RuntimeError(f"No supported signature algorithm found. Available: {available}")
 

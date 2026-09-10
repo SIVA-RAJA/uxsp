@@ -530,6 +530,8 @@ class TestFileKeyStore:
         store = ks.FileKeyStore(deep)
         with store._open_lockfile() as fh:
             assert fh is not None
+        if sys.platform != "win32":
+            assert (store._lock_path.stat().st_mode & 0o777) == 0o600
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -586,6 +588,12 @@ class TestPlatformLocking:
 
         assert lock_calls == ["EX", "SH", "UN"]
         assert seek_calls == [0, 0, 0]
+
+    def test_open_lockfile_win32_branch(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(sys, "platform", "win32")
+        store = ks.FileKeyStore(tmp_path / "win32_store.json")
+        with store._open_lockfile() as fh:
+            assert fh is not None
 
 
 # ──────────────────────────────────────────────────────────────────────────────

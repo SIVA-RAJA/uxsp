@@ -40,12 +40,14 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 # ─────────────────────────────────────────────
 
 
-def derive_key(ikm: bytes, length: int = 32, salt: bytes | None = None, info: bytes = b"") -> bytes:
+def derive_key(
+    ikm: bytes | bytearray, length: int = 32, salt: bytes | None = None, info: bytes = b""
+) -> bytes:
     """
     Derive a symmetric key from secret input material using HKDF-SHA256.
 
     Parameters:
-        ikm    — Input key material (e.g. a Diffie-Hellman shared secret).
+        ikm    — Input key material (e.g. a Diffie-Hellman shared secret; bytes or bytearray).
         length — Length of the derived key in bytes (default 32 = AES-256).
         salt   — Optional cryptographic salt (recommended for domain separation).
         info   — Context string that binds the key to its intended purpose;
@@ -54,8 +56,8 @@ def derive_key(ikm: bytes, length: int = 32, salt: bytes | None = None, info: by
     Returns the derived key as bytes.  Raises TypeError / ValueError for bad inputs.
     """
 
-    if not isinstance(ikm, bytes):
-        raise TypeError("ikm must be bytes")
+    if not isinstance(ikm, (bytes, bytearray)):
+        raise TypeError("ikm must be bytes or bytearray")
     if not isinstance(length, int) or length <= 0:
         raise ValueError("length must be a positive integer")
     if salt is not None and not isinstance(salt, bytes):
@@ -69,7 +71,7 @@ def derive_key(ikm: bytes, length: int = 32, salt: bytes | None = None, info: by
         salt=salt,  # cryptography library accepts None here
         info=info,
     )
-    return hkdf.derive(ikm)
+    return hkdf.derive(bytes(ikm))
 
 
 def derive_multiple_keys(ikm: bytes, salt: bytes | None = None) -> dict[str, bytes]:
@@ -138,15 +140,21 @@ def derive_key_from_password(
     elif len(salt) < 8:
         raise ValueError("Salt must be at least 8 bytes long.")
 
-    key = hash_secret_raw(
-        password.encode("utf-8"),
-        salt,
-        time_cost=time_cost,
-        memory_cost=memory_cost,
-        parallelism=parallelism,
-        hash_len=length,
-        type=Type.ID,
-    )
+    pwd_bytes = bytearray(password.encode("utf-8"))
+    try:
+        key = hash_secret_raw(
+            bytes(pwd_bytes),
+            salt,
+            time_cost=time_cost,
+            memory_cost=memory_cost,
+            parallelism=parallelism,
+            hash_len=length,
+            type=Type.ID,
+        )
+    finally:
+        for i in range(len(pwd_bytes)):
+            pwd_bytes[i] = 0
+
     return {
         "key": key,
         "salt": salt,

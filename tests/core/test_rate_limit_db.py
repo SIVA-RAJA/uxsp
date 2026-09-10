@@ -151,13 +151,25 @@ async def test_async_guarded_handshake():
 
     guard = AsyncGuardedHandshake(mock_limiter, responder, mock_nonce_store)
 
-    # Invalid hello
+    # Invalid hello: non-dict
+    with pytest.raises(ValueError, match="Invalid HELLO format"):
+        await guard.respond("not-a-dict", card)
+
+    # Invalid hello: bad version
     with pytest.raises(ValueError, match="Invalid HELLO format"):
         await guard.respond({"v": 2}, card)
+
+    # Invalid hello: UXSP-HELLO unsupported version
+    with pytest.raises(ValueError, match="Invalid HELLO format"):
+        await guard.respond({"type": "UXSP-HELLO", "supported_versions": ["99"]}, card)
 
     # Invalid nonce
     with pytest.raises(ValueError, match="Invalid or missing initiator nonce"):
         await guard.respond({"v": 1}, card)
+
+    # UXSP-HELLO missing session_id/nonce
+    with pytest.raises(ValueError, match="Invalid or missing initiator nonce"):
+        await guard.respond({"type": "UXSP-HELLO", "supported_versions": ["1"]}, card)
 
     # Replay
     mock_nonce_store.is_seen.return_value = True

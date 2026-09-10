@@ -516,3 +516,35 @@ def test_fastapi_receive_override_no_original_receive(server_identity, client_id
 
     asyncio.run(middleware.dispatch(req, mock_call_next))
 
+
+def test_fastapi_middleware_max_request_size_and_content_type(server_identity):
+    app = FastAPI()
+    app.add_middleware(UXSPFastAPIMiddleware, identity=server_identity, max_request_size=100)
+
+    @app.post("/api/test")
+    async def test_endpoint(request: Request):
+        return {"size": len(await request.body())}
+
+    test_client = TestClient(app)
+
+    # Content-Length exceeds max_request_size -> 413
+    res_cl = test_client.post("/api/test", content=b"short", headers={"Content-Length": "500"})
+    assert res_cl.status_code == 413
+    assert "Payload Too Large" in res_cl.json()["error"]
+
+    # Body exceeds max_request_size via chunked generator (no Content-Length) -> 413
+    def stream_gen():
+        yield b"a" * 150
+    res_body = test_client.post("/api/test", content=stream_gen())
+    assert res_body.status_code == 413
+    assert "Payload Too Large" in res_body.json()["error"]
+
+    # Invalid Content-Length header is ignored gracefully
+    res_bad_cl = test_client.post("/api/test", content=b"hello", headers={"Content-Length": "not_an_int"})
+    assert res_bad_cl.status_code == 200
+
+    # Strict Content-Type: "text/plain; application/uxsp+json" should not match UXSP content type
+    res_ct = test_client.post("/api/test", content=b'{"hello": "world"}', headers={"Content-Type": "text/plain; application/uxsp+json"})
+    assert res_ct.status_code == 200
+
+

@@ -9,18 +9,22 @@ import { UXSPEnvelope, PublicCard } from "./types.js";
 import { Identity } from "./identity.js";
 import { seal, openSeal } from "./seal.js";
 import { aesGcmEncrypt, aesGcmDecrypt } from "./crypto.js";
+import { encodeHex } from "./utils.js";
 
 const KEY_SIZE = 32;
 const NONCE_SIZE = 12;
 
 export class LiveSession {
-  public key: Uint8Array;
+  #key: Uint8Array;
+  #seenFrameNonces = new Set<string>();
+  #lastSeq = -1;
+  static readonly MAX_SEEN_FRAME_NONCES = 10_000;
 
   constructor(key: Uint8Array) {
     if (key.byteLength !== KEY_SIZE) {
       throw new Error(`LiveSession key must be ${KEY_SIZE} bytes.`);
     }
-    this.key = key;
+    this.#key = key;
   }
 
   /**
@@ -38,7 +42,7 @@ export class LiveSession {
     const nonce = new Uint8Array(NONCE_SIZE);
     crypto.getRandomValues(nonce);
 
-    const ciphertext = await aesGcmEncrypt(this.key, nonce, frame, meta);
+    const ciphertext = await aesGcmEncrypt(this.#key, nonce, frame, meta);
 
     // Combine: [2-byte length] + [metadata] + [nonce] + [ciphertext]
     const payload = new Uint8Array(2 + meta.byteLength + nonce.byteLength + ciphertext.byteLength);
@@ -58,7 +62,10 @@ export class LiveSession {
    * Decrypt a raw binary frame.
    * Returns both the decrypted frame and the unencrypted metadata.
    */
-  async decryptFrame(encryptedFrame: Uint8Array): Promise<{ frame: Uint8Array; metadata: Uint8Array }> {
+  async decryptFrame(
+    encryptedFrame: Uint8Array,
+    expectedSeq?: number
+  ): Promise<{ frame: Uint8Array; metadata: Uint8Array }> {
     if (encryptedFrame.byteLength < 2) {
       throw new Error("Encrypted frame is too small to contain length header.");
     }
@@ -70,11 +77,33 @@ export class LiveSession {
       throw new Error("Encrypted frame is too small to contain metadata and nonce.");
     }
 
+    if (expectedSeq !== undefined && expectedSeq <= this.#lastSeq) {
+      throw new Error(`ReplayError: Frame replay detected (expectedSeq ${expectedSeq} <= lastSeq ${this.#lastSeq})`);
+    }
+
     const metadata = encryptedFrame.slice(2, 2 + metaLen);
     const nonce = encryptedFrame.slice(2 + metaLen, 2 + metaLen + NONCE_SIZE);
     const ciphertext = encryptedFrame.slice(2 + metaLen + NONCE_SIZE);
 
-    const frame = await aesGcmDecrypt(this.key, nonce, ciphertext, metadata);
+    const nonceHex = encodeHex(nonce);
+    if (this.#seenFrameNonces.has(nonceHex)) {
+      throw new Error("ReplayError: Frame replay detected");
+    }
+
+    const frame = await aesGcmDecrypt(this.#key, nonce, ciphertext, metadata);
+
+    if (this.#seenFrameNonces.size >= LiveSession.MAX_SEEN_FRAME_NONCES) {
+      const oldest = this.#seenFrameNonces.values().next().value;
+      if (oldest !== undefined) {
+        this.#seenFrameNonces.delete(oldest);
+      }
+    }
+    this.#seenFrameNonces.add(nonceHex);
+
+    if (expectedSeq !== undefined) {
+      this.#lastSeq = expectedSeq;
+    }
+
     return { frame, metadata };
   }
 
@@ -124,8 +153,14 @@ export class LiveVoiceSession extends LiveSession {
   public codec: string;
   public sampleRate: number;
   public channels: number;
+  /**
+   * Monotonically increasing sequence counter for outgoing voice frames.
+   * Starts at 0. Wrapped to 0 if it reaches Number.MAX_SAFE_INTEGER (2^53 - 1)
+   * to protect against integer precision loss.
+   */
   public sequence: number = 0;
   public isMuted: boolean = false;
+  public lastReceivedSequence: number = -1;
 
   constructor(key: Uint8Array, codec = "opus", sampleRate = 48000, channels = 1) {
     super(key);
@@ -143,6 +178,9 @@ export class LiveVoiceSession extends LiveSession {
   }
 
   nextSequence(): number {
+    if (this.sequence >= Number.MAX_SAFE_INTEGER) {
+      this.sequence = 0;
+    }
     this.sequence += 1;
     return this.sequence;
   }
@@ -158,6 +196,11 @@ export class LiveVoiceSession extends LiveSession {
       metadata?: Uint8Array;
     }
   ): Promise<Uint8Array> {
+    if (options?.sequence !== undefined) {
+      if (!Number.isSafeInteger(options.sequence) || options.sequence < 0) {
+        throw new RangeError("sequence must be a non-negative safe integer");
+      }
+    }
     const seq = options?.sequence !== undefined ? options.sequence : this.nextSequence();
     const muted = options?.isMuted !== undefined ? options.isMuted : this.isMuted;
     const cd = options?.codec || this.codec;
@@ -190,12 +233,23 @@ export class LiveVoiceSession extends LiveSession {
     try {
       const metaText = new TextDecoder().decode(metadata);
       const parsed = JSON.parse(metaText);
+      const seq = typeof parsed.sequence === "number" ? parsed.sequence : 0;
+
+      if (typeof parsed.sequence === "number") {
+        if (parsed.sequence <= this.lastReceivedSequence) {
+          throw new Error(
+            `ReplayError: Voice frame replay or out-of-order sequence detected (seq ${parsed.sequence} <= ${this.lastReceivedSequence})`
+          );
+        }
+        this.lastReceivedSequence = parsed.sequence;
+      }
+
       const audioMeta: AudioMetadata = {
         type: parsed.type || "voice",
         codec: parsed.codec || "opus",
         sampleRate: parsed.sample_rate || 48000,
         channels: parsed.channels || 1,
-        sequence: parsed.sequence || 0,
+        sequence: seq,
         isMuted: Boolean(parsed.is_muted),
       };
 
@@ -208,7 +262,10 @@ export class LiveVoiceSession extends LiveSession {
       }
 
       return { frame, audioMetadata: audioMeta };
-    } catch {
+    } catch (err: any) {
+      if (err instanceof Error && err.message.startsWith("ReplayError:")) {
+        throw err;
+      }
       return {
         frame,
         audioMetadata: {

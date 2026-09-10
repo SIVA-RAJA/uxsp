@@ -332,6 +332,10 @@ class FileKeyStore(KeyStore):
     def _open_lockfile(self) -> IO[str]:
         """Open (or create) the lock-file and return its file descriptor."""
         self._lock_path.parent.mkdir(parents=True, exist_ok=True)
+        if sys.platform != "win32":
+            fd = os.open(self._lock_path, os.O_CREAT | os.O_RDWR | os.O_APPEND, 0o600)
+            os.chmod(self._lock_path, 0o600)
+            return open(fd, "a")
         return open(self._lock_path, "a")
 
     def _flock_exclusive(self, fh: IO[str]) -> None:

@@ -477,6 +477,33 @@ class TestCheckAndOpen:
         with pytest.raises(DuplicateNonceError, match="already used"):
             guard.check_and_open(env, recipient, sender_card)
 
+    def test_check_and_open_seen_nonce_raises_duplicate_nonce_error(self):
+        """Pre-check detects already-seen nonce and raises DuplicateNonceError."""
+        store = _make_store(is_seen=True)
+        guard = _make_guard(store=store)
+        recipient, sender_card = self._make_cards()
+        env = self._env(sender_id="alice")
+        with pytest.raises(DuplicateNonceError, match="already used"):
+            guard.check_and_open(env, recipient, sender_card)
+        store.mark_used.assert_not_called()
+
+    def test_check_and_open_forged_envelope_does_not_mark_nonce_used(self, monkeypatch):
+        """If signature verification fails, mark_used is NOT called (nonce not poisoned)."""
+        store = _make_store(is_seen=False, mark_used=True)
+        guard = _make_guard(store=store)
+        recipient, sender_card = self._make_cards()
+        env = self._env(sender_id="alice")
+
+        def fake_verify(*args, **kwargs):
+            raise ValueError("Signature verification failed")
+
+        monkeypatch.setattr("uxsp.core.replay.verify_envelope", fake_verify)
+
+        with pytest.raises(ValueError, match="Signature verification failed"):
+            guard.check_and_open(env, recipient, sender_card)
+
+        store.mark_used.assert_not_called()
+
     def test_envelope_obj_sender_mismatch(self):
         """Envelope object path: mismatch detected after normalise."""
         store = _make_store()
@@ -589,18 +616,21 @@ class TestEdgeCases:
         guard.check_freshness(_envelope_obj(_fresh_env()))
 
     def test_precheck_nonce_slice_in_error_message(self):
-        """DuplicateNonceError message shows first 8 chars of nonce."""
+        """DuplicateNonceError uses generic message without leaking nonce."""
         store = _make_store(is_seen=True)
         guard = _make_guard(store=store)
         nonce = "abcdefgh-rest-of-nonce"
         with pytest.raises(DuplicateNonceError) as exc_info:
             guard.precheck(_fresh_env(nonce=nonce))
-        assert "abcdefgh" in str(exc_info.value)
+        assert "Envelope nonce already used" in str(exc_info.value)
+        assert "abcdefgh" not in str(exc_info.value)
 
     def test_commit_nonce_slice_in_error_message(self):
+        """DuplicateNonceError uses generic message without leaking nonce."""
         store = _make_store(mark_used=False)
         guard = _make_guard(store=store)
         nonce = "12345678-long-nonce"
         with pytest.raises(DuplicateNonceError) as exc_info:
             guard.commit(_fresh_env(nonce=nonce))
-        assert "12345678" in str(exc_info.value)
+        assert "Envelope nonce already used" in str(exc_info.value)
+        assert "12345678" not in str(exc_info.value)

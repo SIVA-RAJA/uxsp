@@ -39,7 +39,8 @@ function bindFields(...fields: Uint8Array[]): Uint8Array {
 export async function seal(
   sender: Identity,
   recipientCard: PublicCard,
-  plaintext: Uint8Array
+  plaintext: Uint8Array,
+  associatedData?: Uint8Array
 ): Promise<UXSPEnvelope> {
   const timestamp = Math.floor(Date.now() / 1000);
   
@@ -76,10 +77,10 @@ export async function seal(
   // 5. Encrypt plaintext
   const nonce = new Uint8Array(12);
   crypto.getRandomValues(nonce);
-  const ad = encodeUTF8(sender.entity_id + recipientCard.entity_id);
+  const ad = associatedData || new Uint8Array(0);
   const ciphertext = await aesGcmEncrypt(symmetricKey, nonce, plaintext, ad);
 
-  const envNonceBytes = new Uint8Array(16);
+  const envNonceBytes = new Uint8Array(32);
   crypto.getRandomValues(envNonceBytes);
   const envNonceHex = encodeHex(envNonceBytes);
 
@@ -128,7 +129,17 @@ export async function seal(
 }
 
 const seenNonces = new Map<string, number>();
-const NONCE_TTL_MS = 60000;
+export const MAX_SEEN_NONCES = 100_000;
+export const MAX_AGE_SECONDS = 300;
+export const CLOCK_SKEW_SECONDS = 30;
+export const NONCE_TTL_MS = (MAX_AGE_SECONDS + CLOCK_SKEW_SECONDS) * 1000; // 330,000 ms
+
+/**
+ * Clear the seen nonces cache (primarily for test isolation).
+ */
+export function _clearSeenNonces(): void {
+  seenNonces.clear();
+}
 
 /**
  * Open a sealed envelope from a sender.
@@ -136,7 +147,8 @@ const NONCE_TTL_MS = 60000;
 export async function openSeal(
   receiver: Identity,
   senderCard: PublicCard,
-  envelope: UXSPEnvelope
+  envelope: UXSPEnvelope,
+  associatedData?: Uint8Array
 ): Promise<Uint8Array> {
   if (envelope.recipient_id !== receiver.entity_id) {
     throw new Error("Envelope is not addressed to this receiver.");
@@ -145,21 +157,28 @@ export async function openSeal(
     throw new Error("Envelope sender_id does not match the provided senderCard.");
   }
 
-  // Replay Protection
+  // 1. Timestamp Freshness Check
+  if (typeof envelope.timestamp !== "number" || isNaN(envelope.timestamp)) {
+    throw new Error("EnvelopeValidationError: Envelope timestamp must be a valid integer Unix timestamp.");
+  }
   const now = Date.now();
+  const nowSec = Math.floor(now / 1000);
+  const age = nowSec - envelope.timestamp;
+
+  if (age > MAX_AGE_SECONDS) {
+    throw new Error(`ReplayError: Envelope is ${age}s old. Possible replay attack.`);
+  }
+  if (age < -CLOCK_SKEW_SECONDS) {
+    throw new Error(`TimestampError: Envelope timestamp is ${-age}s in the future. Clock skew too large.`);
+  }
+
+  // 2. Replay Protection: Check if nonce was already seen
+  if (!envelope.envelope_nonce || typeof envelope.envelope_nonce !== "string") {
+    throw new Error("EnvelopeValidationError: Envelope envelope_nonce must be a non-empty string.");
+  }
+
   if (seenNonces.has(envelope.envelope_nonce)) {
     throw new Error("ReplayError: Envelope replay detected");
-  }
-  seenNonces.set(envelope.envelope_nonce, now);
-
-  if (seenNonces.size > 100) {
-    for (const [nonce, ts] of seenNonces.entries()) {
-      if (now - ts > NONCE_TTL_MS) {
-        seenNonces.delete(nonce);
-      } else {
-        break;
-      }
-    }
   }
 
   const ciphertext = decodeHex(envelope.ciphertext);
@@ -203,7 +222,6 @@ export async function openSeal(
     throw new Error("Classical signature verification failed.");
   }
 
-
   if (!isPqcStubbed) {
     if (!envelope.pqc_sig) {
       throw new Error("Envelope is missing PQC signature but is not in classical-only mode.");
@@ -218,6 +236,28 @@ export async function openSeal(
       throw new Error("PQC signature verification failed.");
     }
   }
+
+  // 3. Replay Protection: Commit nonce after signature verification succeeds
+  // Evict expired entries
+  for (const [nonceKey, ts] of seenNonces.entries()) {
+    if (now - ts > NONCE_TTL_MS) {
+      seenNonces.delete(nonceKey);
+    } else {
+      break;
+    }
+  }
+
+  // Enforce maximum capacity hard cap (evict oldest entries if capacity exceeded)
+  while (seenNonces.size >= MAX_SEEN_NONCES) {
+    const oldestKey = seenNonces.keys().next().value;
+    if (oldestKey !== undefined) {
+      seenNonces.delete(oldestKey);
+    } else {
+      break;
+    }
+  }
+
+  seenNonces.set(envelope.envelope_nonce, now);
 
   // Decapsulate & Derive Key
   const ephemeralPubBase64 = encodeBase64(ephemeralPubBytes);
@@ -247,7 +287,7 @@ export async function openSeal(
   const symmetricKey = await hkdf(combinedSecret, salt, info, 32);
 
   // Decrypt
-  const ad = encodeUTF8(envelope.sender_id + envelope.recipient_id);
+  const ad = associatedData || new Uint8Array(0);
   const plaintext = await aesGcmDecrypt(symmetricKey, nonce, ciphertext, ad);
   return plaintext;
 }

@@ -42,7 +42,7 @@ from enum import Enum, auto
 from typing import Any, ClassVar
 
 from uxsp.crypto.kdf import derive_key
-from uxsp.crypto.symmetric import decrypt, encrypt
+from uxsp.crypto.symmetric import decrypt, encrypt, zeroize
 
 # ─────────────────────────────────────────────
 # SESSION STATE
@@ -219,19 +219,23 @@ class Session:
         self._max_seen_seq = -1
         self._recv_count = 0
 
-        self._send_key = derive_key(
-            shared_secret,
-            length=32,
-            info=self._config.key_info
-            + b":enc"
-            + (b":init_to_resp" if is_initiator else b":resp_to_init"),
+        self._send_key = bytearray(
+            derive_key(
+                shared_secret,
+                length=32,
+                info=self._config.key_info
+                + b":enc"
+                + (b":init_to_resp" if is_initiator else b":resp_to_init"),
+            )
         )
-        self._recv_key = derive_key(
-            shared_secret,
-            length=32,
-            info=self._config.key_info
-            + b":enc"
-            + (b":resp_to_init" if is_initiator else b":init_to_resp"),
+        self._recv_key = bytearray(
+            derive_key(
+                shared_secret,
+                length=32,
+                info=self._config.key_info
+                + b":enc"
+                + (b":resp_to_init" if is_initiator else b":init_to_resp"),
+            )
         )
 
     # ─────────────────────────────────────────
@@ -270,17 +274,19 @@ class Session:
         self._evaluate_expiry_unlocked()
         if self._state == SessionState.EXPIRED:
             raise SessionExpiredError(
-                f"Session {self.session_id[:8]}... expired. Re-establish via Handshake."
+                "Session expired. Re-establish via Handshake."
             )
         if self._state == SessionState.REVOKED:
-            raise SessionRevokedError(f"Session {self.session_id[:8]}... was revoked.")
+            raise SessionRevokedError("Session was revoked.")
         if self._state != SessionState.ACTIVE:
             raise SessionNotActiveError(f"Session is {self._state.name}, not ACTIVE.")
 
     def revoke(self) -> None:
-        """Explicitly terminate this session immediately."""
+        """Explicitly terminate this session immediately and zeroize stored keys."""
         with self._lock:
             self._state = SessionState.REVOKED
+            zeroize(self._send_key)
+            zeroize(self._recv_key)
 
     # ─────────────────────────────────────────
     # ENCRYPT

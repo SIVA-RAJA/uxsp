@@ -7,19 +7,35 @@
 
 import { encodeBase64, decodeBase64 } from "./utils.js";
 
-// Try to import liboqs, fallback gracefully
-let oqs: any = null;
-try {
-  // @ts-ignore
-  import("@oqs/liboqs-js").then(module => {
-    oqs = module;
-  }).catch(() => {
-    console.warn("UXSP: @oqs/liboqs-js not available. Running in classical-only mode.");
-  });
-} catch (e) {
-  console.warn("UXSP: @oqs/liboqs-js not available. Running in classical-only mode.");
+// Cache promise for lazy asynchronous loading of liboqs
+let oqsPromise: Promise<any> | null = null;
+
+/**
+ * Asynchronously retrieve the liboqs module, caching the import promise.
+ */
+export async function getOQS(): Promise<any> {
+  if (!oqsPromise) {
+    oqsPromise = (async () => {
+      try {
+        // @ts-ignore
+        const module = await import("@oqs/liboqs-js");
+        return (module as any).default || module;
+      } catch (e) {
+        console.warn("UXSP: @oqs/liboqs-js not available. Running in classical-only mode.");
+        return null;
+      }
+    })();
+  }
+  return oqsPromise;
 }
 
+/**
+ * Check whether Post-Quantum Cryptography (liboqs) is available.
+ */
+export async function isPQCAvailable(): Promise<boolean> {
+  const mod = await getOQS();
+  return mod !== null;
+}
 
 export interface PQCKeyPairBase64 {
   publicKey: string;
@@ -27,6 +43,7 @@ export interface PQCKeyPairBase64 {
 }
 
 export async function generateMLKEMKeyPair(): Promise<PQCKeyPairBase64> {
+  const oqs = await getOQS();
   if (!oqs) {
     return { publicKey: "STUB_MLKEM_PUB", privateKey: "STUB_MLKEM_PRIV" };
   }
@@ -36,6 +53,7 @@ export async function generateMLKEMKeyPair(): Promise<PQCKeyPairBase64> {
 }
 
 export async function generateMLDSAKeyPair(): Promise<PQCKeyPairBase64> {
+  const oqs = await getOQS();
   if (!oqs) {
     return { publicKey: "STUB_MLDSA_PUB", privateKey: "STUB_MLDSA_PRIV" };
   }
@@ -47,6 +65,7 @@ export async function generateMLDSAKeyPair(): Promise<PQCKeyPairBase64> {
 export async function encapsulateMLKEM(
   peerPublicKeyBase64: string
 ): Promise<{ sharedSecret: Uint8Array; ciphertext: Uint8Array }> {
+  const oqs = await getOQS();
   if (!oqs || peerPublicKeyBase64 === "STUB_MLKEM_PUB") {
     const stubSS = new Uint8Array(32);
     const stubCT = new Uint8Array(32);
@@ -65,6 +84,7 @@ export async function decapsulateMLKEM(
   ciphertext: Uint8Array,
   privateKeyBase64: string
 ): Promise<Uint8Array> {
+  const oqs = await getOQS();
   if (!oqs || privateKeyBase64 === "STUB_MLKEM_PRIV") {
     return new Uint8Array(32);
   }
@@ -78,10 +98,9 @@ export async function signMLDSA(
   privateKeyBase64: string,
   data: Uint8Array
 ): Promise<Uint8Array> {
+  const oqs = await getOQS();
   if (!oqs || privateKeyBase64 === "STUB_MLDSA_PRIV") {
-    const sig = new Uint8Array(64);
-    crypto.getRandomValues(sig);
-    return sig;
+    throw new Error("PQCUnavailableError: Cannot sign with ML-DSA: PQC module is unavailable or stub key provided.");
   }
   const signer = await oqs.createMLDSA65();
   const privKey = decodeBase64(privateKeyBase64);
@@ -94,8 +113,9 @@ export async function verifyMLDSA(
   signature: Uint8Array,
   data: Uint8Array
 ): Promise<boolean> {
+  const oqs = await getOQS();
   if (!oqs || publicKeyBase64 === "STUB_MLDSA_PUB") {
-    return true; // Fallback to classical mode
+    return false;
   }
   const verifier = await oqs.createMLDSA65();
   const pubKey = decodeBase64(publicKeyBase64);

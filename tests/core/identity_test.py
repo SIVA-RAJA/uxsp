@@ -754,8 +754,16 @@ class TestIdentityUtils:
     def test_eq_same_entity_id(self):
         m = _import()
         a = m.Identity.create("Alice", "ADMIN")
-        b = m.Identity(a.entity_id, "Other", "USER", _fake_keypair())
+        b = m.Identity(a.entity_id, "Other", "USER", a.keypair)
         assert a == b
+
+    def test_eq_different_keypair(self):
+        m = _import()
+        a = m.Identity.create("Alice", "ADMIN")
+        diff_kp = _fake_keypair()
+        diff_kp["signing"]["private_key"] = b"\x01" * 32
+        b = m.Identity(a.entity_id, "Other", "USER", diff_kp)
+        assert a != b
 
     def test_eq_different_entity_id(self):
         m = _import()

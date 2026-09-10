@@ -647,12 +647,20 @@ class AsyncGuardedHandshake:
         # However, Handshake.respond is currently synchronous and expects a sync NonceStore.
         # We can implement a static method or logic here to do it asynchronously.
 
-        # Verify HELLO format (from Handshake.respond)
-        if not isinstance(hello, dict) or hello.get("v") != 1:
+        # Verify HELLO format (supports both standard UXSP-HELLO and legacy format)
+        if not isinstance(hello, dict):
             raise ValueError("Invalid HELLO format or version.")
 
-        nonce = hello.get("n")
-        if not isinstance(nonce, str):
+        is_uxsp_hello = hello.get("type") == "UXSP-HELLO"
+        has_supported_version = isinstance(hello.get("supported_versions"), list) and any(
+            v in ("1", 1) for v in hello.get("supported_versions", [])
+        )
+
+        if not ((is_uxsp_hello and has_supported_version) or hello.get("v") == 1):
+            raise ValueError("Invalid HELLO format or version.")
+
+        nonce = hello.get("n") or hello.get("session_id")
+        if not isinstance(nonce, str) or not nonce:
             raise ValueError("Invalid or missing initiator nonce.")
 
         if self._nonce_store is not None:

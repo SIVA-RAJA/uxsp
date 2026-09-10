@@ -65,6 +65,11 @@ class UXSPFlaskMiddleware:
     Flask extension for automatic request decryption, response encryption,
     and Seamless Protocol Negotiation (Automatic Fallback & Upgrade).
 
+    Security Note:
+        Encrypted responses include the 'X-UXSP-Sender' header containing the server's
+        public entity_id. This is deliberate and necessary for the UXSP protocol, allowing
+        the client to resolve the server's public keys for envelope decryption.
+
     Args:
         app: Flask application instance.
         identity: Server Identity instance or callable returning an Identity.
@@ -73,6 +78,8 @@ class UXSPFlaskMiddleware:
         mode: Operation mode ("hybrid" default, or "strict" to mandate encryption).
         require_encryption: Legacy setting. If True, sets mode="strict" (fallback=False).
         exclude_paths: List of route path prefixes to bypass (e.g. ["/static"]).
+        max_response_size: Maximum uncompressed response payload size in bytes before requiring streaming.
+        max_request_size: Maximum allowed incoming request body size in bytes (defaults to 16 MiB). Requests exceeding this will be rejected with HTTP 413.
     """
 
     def __init__(
@@ -85,6 +92,7 @@ class UXSPFlaskMiddleware:
         require_encryption: bool | None = None,
         exclude_paths: Sequence[str] | None = None,
         max_response_size: int = 16 * 1024 * 1024,
+        max_request_size: int = 16 * 1024 * 1024,
     ) -> None:
         self.identity = identity
         self.keystore = keystore
@@ -99,6 +107,7 @@ class UXSPFlaskMiddleware:
         self.require_encryption = not self.fallback or self.mode == "strict"
         self.exclude_paths = list(exclude_paths) if exclude_paths else ["/static"]
         self.max_response_size = max_response_size
+        self.max_request_size = max_request_size
 
         if app is not None:
             self.init_app(app)
@@ -133,11 +142,25 @@ class UXSPFlaskMiddleware:
         header_sender = request.headers.get("X-UXSP-Sender")
         content_type = request.headers.get("Content-Type", "")
 
+        content_length_header = request.headers.get("Content-Length") or request.environ.get("CONTENT_LENGTH")
+        if content_length_header:
+            try:
+                if int(content_length_header) > self.max_request_size:
+                    return jsonify({"error": "Payload Too Large", "detail": f"Request body exceeds maximum size of {self.max_request_size} bytes."}), 413
+            except (ValueError, TypeError):
+                pass
+
         body_bytes = request.get_data()
+        if len(body_bytes) > self.max_request_size:
+            return jsonify({"error": "Payload Too Large", "detail": f"Request body exceeds maximum size of {self.max_request_size} bytes."}), 413
+
         is_uxsp_request = False
         package: SecurePackage | None = None
 
-        if (header_pkg or header_sender or "application/uxsp+json" in content_type) and (body_bytes and body_bytes.strip().startswith(b"{")):
+        content_type_media = content_type.split(";")[0].strip().lower() if content_type else ""
+        is_uxsp_ct = content_type_media == "application/uxsp+json"
+
+        if (header_pkg or header_sender or is_uxsp_ct) and (body_bytes and body_bytes.strip().startswith(b"{")):
             try:
                 data_dict = json.loads(body_bytes.decode("utf-8"))
                 if isinstance(data_dict, dict) and "sender_id" in data_dict and ("envelope" in data_dict or "chunks" in data_dict):
@@ -146,8 +169,8 @@ class UXSPFlaskMiddleware:
                         is_uxsp_request = True
                     except Exception as e:  # pragma: no cover
                         logger.error("Malformed UXSP request: %s", e, exc_info=True)
-                        return jsonify({"error": "Malformed UXSP request", "detail": str(e)}), 400
-            except (json.JSONDecodeError, KeyError):
+                        return jsonify({"error": "Malformed UXSP request", "detail": "Invalid UXSP payload."}), 400
+            except (json.JSONDecodeError, UnicodeDecodeError, KeyError):
                 pass
 
         server_identity = self._get_identity()

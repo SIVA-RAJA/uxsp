@@ -224,9 +224,10 @@ class TestIsSeen:
         assert self.store.is_seen("active") is True
 
     def test_expired_nonce_returns_false(self):
-        """A nonce whose TTL has passed is treated as unseen."""
+        """A nonce whose TTL has passed is treated as unseen and purged from _store."""
         self.store._store["dead"] = time.time() - 1  # already expired
         assert self.store.is_seen("dead") is False
+        assert "dead" not in self.store._store
 
     def test_nonce_not_in_store_early_return(self):
         """Exercises the `if exp is None: return False` branch explicitly."""

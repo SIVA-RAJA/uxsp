@@ -12,7 +12,8 @@ import {
   encapsulateMLKEM,
   decapsulateMLKEM,
   signMLDSA,
-  verifyMLDSA
+  verifyMLDSA,
+  isPQCAvailable
 } from "../dist/pqc.js";
 import {
   generateX25519KeyPair,
@@ -65,7 +66,8 @@ test("Full Coverage - LiveSession & LiveVoiceSession edge cases", async () => {
   const bobLive = await Identity.create("bobLive");
   const { envelope: liveEnv, session: aliceLiveSession } = await LiveSession.create(aliceLive, bobLive.publicCard());
   const bobLiveSession = await LiveSession.accept(bobLive, aliceLive.publicCard(), liveEnv);
-  assert.deepStrictEqual(aliceLiveSession.key, bobLiveSession.key);
+  assert.strictEqual((aliceLiveSession as any).key, undefined);
+  assert.strictEqual((bobLiveSession as any).key, undefined);
 
   const testLiveFrame = new Uint8Array([11, 22, 33]);
   const encLive = await aliceLiveSession.encryptFrame(testLiveFrame);
@@ -180,7 +182,7 @@ test("Full Coverage - Seal & OpenSeal validation edge cases", async () => {
   const cNonce = new Uint8Array(12);
   crypto.getRandomValues(cNonce);
   const msgBytes = encodeUTF8("classical message");
-  const cCiphertext = await aesGcmEncrypt(symmKey, cNonce, msgBytes, encodeUTF8(alice.entity_id + bob.entity_id));
+  const cCiphertext = await aesGcmEncrypt(symmKey, cNonce, msgBytes, new Uint8Array(0));
   const cEnvNonce = "classical_nonce_test_999";
   const nowTs = Math.floor(Date.now() / 1000);
   
@@ -306,11 +308,14 @@ test("Full Coverage - PQC stub branches", async () => {
   assert.strictEqual(encap.ciphertext.length, 32);
 
   const decap = await decapsulateMLKEM(new Uint8Array(32), "STUB_MLKEM_PRIV");
-  assert.strictEqual(decap.length, 32);
+  const available = await isPQCAvailable();
+  assert.strictEqual(typeof available, "boolean");
 
-  const sig = await signMLDSA("STUB_MLDSA_PRIV", new Uint8Array([1, 2, 3]));
-  assert.strictEqual(sig.length, 64);
+  await assert.rejects(
+    async () => await signMLDSA("STUB_MLDSA_PRIV", new Uint8Array([1, 2, 3])),
+    /PQCUnavailableError/
+  );
 
-  const verified = await verifyMLDSA("STUB_MLDSA_PUB", sig, new Uint8Array([1, 2, 3]));
-  assert.strictEqual(verified, true);
+  const verified = await verifyMLDSA("STUB_MLDSA_PUB", new Uint8Array(64), new Uint8Array([1, 2, 3]));
+  assert.strictEqual(verified, false);
 });

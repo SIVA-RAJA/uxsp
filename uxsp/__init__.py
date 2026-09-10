@@ -143,9 +143,12 @@ from uxsp.core.session import (
 # ─────────────────────────────────────────────
 from uxsp.core.signing import (
     CardNotYetValidError,
+    CertificateRevocationList,
+    CRL,
     ExpiredCardError,
     InvalidCardSignatureError,
     PublicAnchor,
+    RevokedCardError,
     SignedCard,
     SigningError,
     TrustAnchor,
@@ -385,11 +388,14 @@ __all__ = [
     "PublicAnchor",
     "SignedCard",
     "TrustStore",
+    "CertificateRevocationList",
+    "CRL",
     "SigningError",
     "UntrustedCardError",
     "InvalidCardSignatureError",
     "ExpiredCardError",
     "CardNotYetValidError",
+    "RevokedCardError",
     # handshake
     "Handshake",
     "HandshakeError",

@@ -187,16 +187,14 @@ def _verify_hello_signature(
 
     if hello.get("initiator_id") != initiator_card.entity_id:
         raise HandshakeAuthError(
-            f"HelloMessage initiator_id '{hello.get('initiator_id', '')[:8]}...' "
-            f"does not match provided card '{initiator_card.entity_id[:8]}...'. "
-            f"Possible identity confusion attack."
+            "HelloMessage initiator_id does not match provided card. "
+            "Possible identity confusion attack."
         )
 
     if hello.get("responder_id") != responder.entity_id:
         raise HandshakeAuthError(
-            f"HelloMessage intended for '{hello.get('responder_id', '')[:8]}...', "
-            f"not for this responder '{responder.entity_id[:8]}...'. "
-            f"Possible misdirected or replayed handshake."
+            "HelloMessage responder_id is not for this responder. "
+            "Possible misdirected or replayed handshake."
         )
     client_versions = hello.get("supported_versions")
     if not isinstance(client_versions, list) or not client_versions:

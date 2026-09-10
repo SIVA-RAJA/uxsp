@@ -21,6 +21,7 @@ from uxsp.crypto.symmetric import (
     encrypt,
     encrypt_str,
     generate_symmetric_key,
+    zeroize,
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -305,3 +306,28 @@ class TestDecryptStrHappyPath:
         result = encrypt_str("data", key)
         recovered = decrypt_str(result["ciphertext"], result["nonce"], key)
         assert isinstance(recovered, str)
+
+
+class TestZeroizeAndByteArray:
+    def test_zeroize_overwrites_buffer(self):
+        buf = bytearray(b"supersecretbytes1234567890123456")
+        zeroize(buf)
+        assert all(b == 0 for b in buf)
+
+    def test_zeroize_none_and_non_bytearray_no_op(self):
+        zeroize(None)
+        zeroize("not a bytearray")  # type: ignore[arg-type]
+
+    def test_encrypt_decrypt_with_bytearray_key(self):
+        key = bytearray(good_key())
+        data = b"confidential payload"
+        enc = encrypt(data, key)
+        dec = decrypt(enc["ciphertext"], enc["nonce"], key)
+        assert dec == data
+
+    def test_encrypt_str_decrypt_str_with_bytearray_key(self):
+        key = bytearray(good_key())
+        text = "confidential string"
+        enc = encrypt_str(text, key)
+        dec = decrypt_str(enc["ciphertext"], enc["nonce"], key)
+        assert dec == text

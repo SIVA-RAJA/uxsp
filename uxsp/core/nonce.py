@@ -177,7 +177,10 @@ class MemoryNonceStore(NonceStore):
             exp = self._store.get(nonce)
             if exp is None:
                 return False
-            return time.time() < exp
+            if time.time() >= exp:
+                del self._store[nonce]
+                return False
+            return True
 
     def _cleanup_unlocked(self, now: float) -> int:
         """Must be called with self._lock already held."""

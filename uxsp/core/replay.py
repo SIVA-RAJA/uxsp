@@ -186,7 +186,7 @@ class ReplayGuard:
         self._check_freshness_normalised(d)
         nonce = d["envelope_nonce"]
         if self._store.is_seen(nonce):
-            raise DuplicateNonceError(f"Nonce '{nonce[:8]}...' already used. Replay rejected.")
+            raise DuplicateNonceError("Envelope nonce already used. Replay rejected.")
 
     def commit(self, envelope: dict[str, Any] | Envelope) -> None:
         """
@@ -203,7 +203,7 @@ class ReplayGuard:
         nonce = d["envelope_nonce"]
         first_use = self._store.mark_used(nonce, ttl_seconds=self._window + self._clock_skew)
         if not first_use:
-            raise DuplicateNonceError(f"Nonce '{nonce[:8]}...' already used. Replay rejected.")
+            raise DuplicateNonceError("Envelope nonce already used. Replay rejected.")
 
     def check_and_commit(self, envelope: dict[str, Any] | Envelope) -> None:
         """Atomically verify freshness AND mark nonce as used. One-shot."""
@@ -234,8 +234,7 @@ class ReplayGuard:
         self._check_freshness_normalised(d)
 
         nonce = d["envelope_nonce"]
-        first_use = self._store.mark_used(nonce, ttl_seconds=self._window + self._clock_skew)
-        if not first_use:
+        if self._store.is_seen(nonce):
             raise DuplicateNonceError(f"Nonce '{nonce[:8]}...' already used. Replay rejected.")
 
         verified = verify_envelope(
@@ -246,6 +245,10 @@ class ReplayGuard:
             max_age_seconds=self._window,
             clock_skew_seconds=self._clock_skew,
         )
+
+        first_use = self._store.mark_used(nonce, ttl_seconds=self._window + self._clock_skew)
+        if not first_use:
+            raise DuplicateNonceError(f"Nonce '{nonce[:8]}...' already used. Replay rejected.")
 
         return decrypt_verified_envelope(verified, recipient_identity.keypair)
 

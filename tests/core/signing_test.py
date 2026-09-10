@@ -107,16 +107,20 @@ _patch_hybrid_verify.start()
 
 # Now safe to import
 from uxsp.core.signing import (
+    CRL,
     CardNotYetValidError,
+    CertificateRevocationList,
     ExpiredCardError,
     InvalidCardSignatureError,
     PublicAnchor,
+    RevokedCardError,
     SignedCard,
     SigningError,
     TrustAnchor,
     TrustStore,
     UntrustedCardError,
     _card_signable,
+    _crl_signable,
     _lock_exclusive,
     _lock_release,
 )
@@ -598,6 +602,11 @@ class TestSigningWin32LockBranch:
             assert len(lock_calls) == 2
             assert lock_calls[0][2] == fake_msvcrt.LK_LOCK
             assert lock_calls[1][2] == fake_msvcrt.LK_UNLCK
+
+            # Exercise TrustStore save on win32
+            ts_path = str(tmp_path / "win32_ts.json")
+            signing_mod.TrustStore().save(ts_path)
+            assert os.path.exists(ts_path)
         finally:
             sys.platform = orig_platform
             sys.modules.pop("uxsp.core.signing", None)
@@ -934,3 +943,251 @@ class TestLockHelpers:
                 _lock_release(fh)
         finally:
             os.unlink(path)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CRL, Revocation & Permission Tests (H6, H7, H8)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestCertificateRevocationList:
+    def _make_crl(self, cert_id: str = "cert-123"):
+        return CertificateRevocationList(
+            issuer_id="anchor-001",
+            issuer_name="Root CA",
+            crl_number=1,
+            issued_at=NOW,
+            revoked_certs={cert_id: {"revocation_date": NOW, "reason": "key_compromise"}},
+            classical_sig=b"\xde\xad\xbe\xef",
+            pqc_sig=b"\xca\xfe\xba\xbe",
+        )
+
+    def test_is_revoked_and_get_revocation_info(self):
+        crl = self._make_crl("cert-abc")
+        assert crl.is_revoked("cert-abc") is True
+        assert crl.is_revoked("cert-xyz") is False
+        assert crl.get_revocation_info("cert-abc") == {"revocation_date": NOW, "reason": "key_compromise"}
+        assert crl.get_revocation_info("cert-xyz") is None
+
+    def test_to_dict_and_to_json(self):
+        crl = self._make_crl("cert-abc")
+        d = crl.to_dict()
+        assert d["issuer_id"] == "anchor-001"
+        assert d["crl_number"] == 1
+        assert "cert-abc" in d["revoked_certs"]
+        j = crl.to_json()
+        assert "anchor-001" in j
+
+    def test_from_dict_and_from_json(self):
+        crl = self._make_crl("cert-abc")
+        d = crl.to_dict()
+        crl2 = CertificateRevocationList.from_dict(d)
+        assert crl2.issuer_id == crl.issuer_id
+        assert crl2.crl_number == crl.crl_number
+        assert crl2.is_revoked("cert-abc")
+
+        j = crl.to_json()
+        crl3 = CertificateRevocationList.from_json(j)
+        assert crl3.issuer_id == crl.issuer_id
+        assert crl3 == crl
+
+    def test_repr_eq_hash(self):
+        crl1 = self._make_crl("cert-abc")
+        crl2 = self._make_crl("cert-abc")
+        assert repr(crl1).startswith("CertificateRevocationList")
+        assert crl1 == crl2
+        assert crl1 != "not-a-crl"
+        assert hash(crl1) == hash(crl2)
+
+    def test_verify_success(self):
+        crl = self._make_crl("cert-abc")
+        _HYBRID.hybrid_verify.reset_mock()
+        _HYBRID.hybrid_verify.return_value = True
+        assert crl.verify({"signing_pub": b"key"}) is True
+
+    def test_verify_fails_signature_mismatch(self):
+        crl = self._make_crl("cert-abc")
+        _HYBRID.hybrid_verify.reset_mock()
+        _HYBRID.hybrid_verify.return_value = False
+        with pytest.raises(InvalidCardSignatureError, match="does not verify"):
+            crl.verify({"signing_pub": b"key"})
+
+    def test_verify_raises_on_envelope_validation_error(self):
+        crl = self._make_crl("cert-abc")
+        _HYBRID.hybrid_verify.reset_mock()
+        _HYBRID.hybrid_verify.side_effect = EnvelopeValidationError("bad sig")
+        try:
+            with pytest.raises(InvalidCardSignatureError, match="malformed"):
+                crl.verify({"signing_pub": b"key"})
+        finally:
+            _HYBRID.hybrid_verify.side_effect = None
+
+
+class TestTrustAnchorIssueCRL:
+    def test_issue_crl_with_dict(self):
+        ta = TrustAnchor(_make_identity("anchor-1", "CA"))
+        crl = ta.issue_crl({"cert-1": {"revocation_date": 1000, "reason": "superseded"}}, crl_number=2, issued_at=1234)
+        assert crl.issuer_id == "anchor-1"
+        assert crl.crl_number == 2
+        assert crl.issued_at == 1234
+        assert crl.is_revoked("cert-1")
+
+    def test_issue_crl_with_signed_card_list(self):
+        ta = TrustAnchor(_make_identity("anchor-1", "CA"))
+        card = MagicMock()
+        sc = SignedCard(card, "cert-sc", "anchor-1", "CA", 100, 200, b"csig", b"psig")
+        crl = ta.issue_crl([sc])
+        assert crl.is_revoked("cert-sc")
+
+    def test_issue_crl_with_dict_list(self):
+        ta = TrustAnchor(_make_identity("anchor-1", "CA"))
+        crl = ta.issue_crl([{"cert_id": "cert-entry", "reason": "compromised"}])
+        assert crl.is_revoked("cert-entry")
+        assert crl.get_revocation_info("cert-entry")["reason"] == "compromised"
+
+    def test_issue_crl_with_str_list(self):
+        ta = TrustAnchor(_make_identity("anchor-1", "CA"))
+        crl = ta.issue_crl(["cert-str"])
+        assert crl.is_revoked("cert-str")
+
+    def test_issue_crl_invalid_entry_raises(self):
+        ta = TrustAnchor(_make_identity("anchor-1", "CA"))
+        with pytest.raises(ValueError, match="Invalid entry in revoked_certs"):
+            ta.issue_crl([12345])  # type: ignore
+
+    def test_issue_crl_empty(self):
+        ta = TrustAnchor(_make_identity("anchor-1", "CA"))
+        crl = ta.issue_crl()
+        assert len(crl.revoked_certs) == 0
+
+
+class TestTrustStoreRevocationAndCRL:
+    def test_revoke_unrevoke_and_info(self):
+        store = TrustStore()
+        assert store.is_revoked("cert-1") is False
+        store.revoke("cert-1", reason="fraud", revocation_date=5000)
+        assert store.is_revoked("cert-1") is True
+        assert store.get_revocation_info("cert-1") == {"revocation_date": 5000, "reason": "fraud"}
+        assert store.revoked_cert_ids == ["cert-1"]
+
+        store.unrevoke("cert-1")
+        assert store.is_revoked("cert-1") is False
+        assert store.get_revocation_info("cert-1") is None
+
+    def test_verify_raises_revoked_card_error(self):
+        store = TrustStore()
+        anchor = _public_anchor(anchor_id="anchor-001")
+        store.add(anchor)
+
+        card = _make_public_card()
+        sc = SignedCard(card, "cert-revoked", "anchor-001", "Root CA", PAST, FAR_FUTURE, b"csig", b"psig")
+        store.revoke("cert-revoked", reason="stolen key")
+
+        with pytest.raises(RevokedCardError, match="has been revoked: stolen key"):
+            store.verify(sc)
+
+    def test_add_crl_with_verification(self):
+        store = TrustStore()
+        anchor = _public_anchor(anchor_id="anchor-001")
+        store.add(anchor)
+
+        crl = CertificateRevocationList(
+            issuer_id="anchor-001",
+            issuer_name="Root CA",
+            crl_number=1,
+            issued_at=NOW,
+            revoked_certs={"cert-from-crl": {"revocation_date": NOW, "reason": "compromise"}},
+            classical_sig=b"\xde\xad",
+            pqc_sig=b"\xca\xfe",
+        )
+
+        _HYBRID.hybrid_verify.reset_mock()
+        _HYBRID.hybrid_verify.return_value = True
+        store.add_crl(crl, verify_signature=True)
+        assert store.is_revoked("cert-from-crl") is True
+
+    def test_add_crl_untrusted_issuer_raises(self):
+        store = TrustStore()
+        crl = CertificateRevocationList(
+            issuer_id="untrusted-anchor",
+            issuer_name="Unknown CA",
+            crl_number=1,
+            issued_at=NOW,
+            revoked_certs={"cert-1": {"revocation_date": NOW, "reason": "test"}},
+            classical_sig=b"\xde\xad",
+            pqc_sig=b"\xca\xfe",
+        )
+        with pytest.raises(UntrustedCardError, match="not in the trust store"):
+            store.add_crl(crl, verify_signature=True)
+
+    def test_add_crl_without_verification(self):
+        store = TrustStore()
+        crl = CertificateRevocationList(
+            issuer_id="any-anchor",
+            issuer_name="Unknown CA",
+            crl_number=1,
+            issued_at=NOW,
+            revoked_certs={"cert-no-verify": {"revocation_date": NOW, "reason": "test"}},
+            classical_sig=b"\xde\xad",
+            pqc_sig=b"\xca\xfe",
+        )
+        store.add_crl(crl, verify_signature=False)
+        assert store.is_revoked("cert-no-verify") is True
+
+    def test_save_and_load_roundtrip_with_revocations(self):
+        store = TrustStore()
+        pa = _public_anchor("anchor-save")
+        store.add(pa)
+        store.revoke("cert-persistent", reason="compromised", revocation_date=12345)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "trust_store.json")
+            store.save(path)
+
+            loaded = TrustStore.load(path)
+            assert loaded.has("anchor-save")
+            assert loaded.is_revoked("cert-persistent")
+            info = loaded.get_revocation_info("cert-persistent")
+            assert info["reason"] == "compromised"
+            assert info["revocation_date"] == 12345
+
+
+class TestPermissions:
+    """H6 & H7: verify 0o600 permissions on TrustStore file and lock file."""
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX file mode check")
+    def test_truststore_and_lock_permissions_are_0o600(self):
+        store = TrustStore()
+        store.add(_public_anchor("anchor-perm"))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "store.json")
+            store.save(path)
+
+            # Check store file permissions
+            mode = os.stat(path).st_mode & 0o777
+            assert mode == 0o600
+
+            # Check lock file permissions
+            lock_path = path + ".lock"
+            assert os.path.exists(lock_path)
+            lock_mode = os.stat(lock_path).st_mode & 0o777
+            assert lock_mode == 0o600
+
+
+class TestCrlSignable:
+    def test_crl_signable_binds_fields(self):
+        _HYBRID.bind_fields.reset_mock()
+        _HYBRID.bind_fields.return_value = b"crl-signable-result"
+
+        entries = [("c1", 100, "r1"), ("c2", 200, "r2")]
+        res = _crl_signable("anchor-id", 1, 500, entries)
+        assert res == b"crl-signable-result"
+        _HYBRID.bind_fields.assert_called_once_with(
+            b"UXSP-CRL-1",
+            b"anchor-id",
+            b"1",
+            b"500",
+            b"c1:100:r1",
+            b"c2:200:r2",
+        )
+

@@ -120,8 +120,14 @@ def _make_symmetric_mod():
     def decrypt(ciphertext, nonce, key, associated_data=b""):
         return FAKE_PLAINTEXT
 
+    def zeroize(buf):
+        if buf is not None and isinstance(buf, bytearray):
+            for i in range(len(buf)):
+                buf[i] = 0
+
     mod.encrypt = encrypt
     mod.decrypt = decrypt
+    mod.zeroize = zeroize
     return mod
 
 
@@ -242,6 +248,14 @@ class TestBindFields:
 
     def test_no_fields_returns_empty(self):
         assert hybrid.bind_fields() == b""
+
+    def test_field_exceeding_4gib_raises_value_error(self):
+        class HugeBytes(bytes):
+            def __len__(self):
+                return 0x1_0000_0000
+
+        with pytest.raises(ValueError, match="exceeds maximum 4 GiB limit"):
+            hybrid.bind_fields(HugeBytes())
 
 
 # ═════════════════════════════════════════════════════════════
@@ -407,6 +421,11 @@ class TestHybridVerify:
             assert hybrid.hybrid_verify(b"msg", sigs, pub, allow_classical_only=True) is True
             mock_warning.assert_called_once()
             assert "PQC is not active for this envelope" in mock_warning.call_args[0][0]
+
+    def test_verify_classical_only_without_pqc_sig_pub_succeeds(self):
+        sigs = {"classical_sig": FAKE_CLASSICAL_SIG.hex()}
+        pub = {"signing_pub": FAKE_SIGNING_PUB}  # No pqc_sig_pub present
+        assert hybrid.hybrid_verify(b"msg", sigs, pub, allow_classical_only=True) is True
 
 
 # ═════════════════════════════════════════════════════════════

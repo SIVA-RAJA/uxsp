@@ -66,18 +66,26 @@ class UXSPDjangoMiddleware:
     Django middleware for automatic request decryption, response encryption,
     and Seamless Protocol Negotiation (Automatic Fallback & Upgrade).
 
-    Reads configuration options from Django settings if available:
-        - UXSP_SERVER_IDENTITY: Server Identity instance.
-        - UXSP_KEYSTORE: KeyStore instance.
-        - UXSP_FALLBACK: bool (default: True).
-        - UXSP_MODE: str ("hybrid" or "strict", default: "hybrid").
-        - UXSP_REQUIRE_ENCRYPTION: bool (legacy setting, default: False).
+    Reads configuration options from Django settings if available    Settings:
+        - UXSP_SERVER_IDENTITY: Identity object for this server.
+        - UXSP_KEYSTORE: KeyStore instance to look up peer PublicCards.
+        - UXSP_FALLBACK: bool, allow unencrypted requests (default: True).
+        - UXSP_REQUIRE_ENCRYPTION: bool, legacy shortcut to force strict mode.
+        - UXSP_MODE: "hybrid" (default) or "strict".
+        - UXSP_MAX_RESPONSE_SIZE: max size in bytes for unchunked responses (default: 16MB).
+        - UXSP_MAX_REQUEST_SIZE: max size in bytes for request body (default: 16MB).
         - UXSP_EXCLUDE_PATHS: list of path prefixes to exclude (default: ["/admin/", "/static/"]).
+
+    Security Note:
+        Encrypted responses include the 'X-UXSP-Sender' header containing the server's
+        public entity_id. This is deliberate and necessary for the UXSP protocol, allowing
+        the client to resolve the server's public keys for envelope decryption.
     """
 
     def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
         self.get_response = get_response
         self.max_response_size: int = getattr(settings, "UXSP_MAX_RESPONSE_SIZE", 16 * 1024 * 1024)
+        self.max_request_size: int = getattr(settings, "UXSP_MAX_REQUEST_SIZE", 16 * 1024 * 1024)
         self.identity: Identity | None = getattr(settings, "UXSP_SERVER_IDENTITY", None)
         self.keystore: KeyStore | None = getattr(settings, "UXSP_KEYSTORE", None)
 
@@ -117,11 +125,25 @@ class UXSPDjangoMiddleware:
         header_sender = request.META.get("HTTP_X_UXSP_SENDER")
         content_type = request.META.get("CONTENT_TYPE", "")
 
+        content_length = request.META.get("CONTENT_LENGTH")
+        if content_length:
+            try:
+                if int(content_length) > self.max_request_size:
+                    return JsonResponse({"error": "Payload Too Large", "detail": f"Request body exceeds maximum size of {self.max_request_size} bytes."}, status=413)
+            except (ValueError, TypeError):
+                pass
+
         body_bytes = request.body
+        if len(body_bytes) > self.max_request_size:
+            return JsonResponse({"error": "Payload Too Large", "detail": f"Request body exceeds maximum size of {self.max_request_size} bytes."}, status=413)
+
         is_uxsp_request = False
         package: SecurePackage | None = None
 
-        if (header_pkg or header_sender or "application/uxsp+json" in content_type) and (body_bytes and body_bytes.strip().startswith(b"{")):
+        content_type_media = content_type.split(";")[0].strip().lower() if content_type else ""
+        is_uxsp_ct = content_type_media == "application/uxsp+json"
+
+        if (header_pkg or header_sender or is_uxsp_ct) and (body_bytes and body_bytes.strip().startswith(b"{")):
             try:
                 data_dict = json.loads(body_bytes.decode("utf-8"))
                 if isinstance(data_dict, dict) and "sender_id" in data_dict and ("envelope" in data_dict or "chunks" in data_dict):
@@ -130,8 +152,8 @@ class UXSPDjangoMiddleware:
                         is_uxsp_request = True
                     except Exception as e:  # pragma: no cover
                         logger.error("Malformed UXSP request: %s", e, exc_info=True)
-                        return JsonResponse({"error": "Malformed UXSP request", "detail": str(e)}, status=400)
-            except (json.JSONDecodeError, KeyError):
+                        return JsonResponse({"error": "Malformed UXSP request", "detail": "Invalid UXSP payload."}, status=400)
+            except (json.JSONDecodeError, UnicodeDecodeError, KeyError):
                 pass
 
         server_identity = self._get_identity()
