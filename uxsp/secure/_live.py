@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from uxsp.core.live import LiveSession, LiveVoiceSession
 
 from uxsp.core.identity import Identity, PublicCard
 from uxsp.secure._engine import (
@@ -18,7 +21,7 @@ def SendLiveSession(
     sender: Identity | None = None,
     sender_identity: Identity | None = None,
     metadata: dict[str, Any] | None = None,
-) -> tuple[SecurePackage, __import__("uxsp.core.live", fromlist=["LiveSession"]).LiveSession]:  # type: ignore[valid-type]
+) -> tuple[SecurePackage, LiveSession]:
     """
     Negotiate a high-performance AES-GCM LiveSession for WebRTC video or socket streams.
     Returns a tuple: (The encrypted SecurePackage to send, The local LiveSession).
@@ -51,7 +54,7 @@ def ReceiveLiveSession(
     sender_card: PublicCard | Identity | None = None,
     receiver: Identity | None = None,
     receiver_identity: Identity | None = None,
-) -> __import__("uxsp.core.live", fromlist=["LiveSession"]).LiveSession:  # type: ignore[valid-type]
+) -> LiveSession:
     """
     Accept a high-performance AES-GCM LiveSession from a peer.
     Returns the decrypted, ready-to-use LiveSession.
@@ -84,7 +87,7 @@ def SendLiveVoiceCall(
     sample_rate: int = 48000,
     channels: int = 1,
     metadata: dict[str, Any] | None = None,
-) -> tuple[SecurePackage, __import__("uxsp.core.live", fromlist=["LiveVoiceSession"]).LiveVoiceSession]:  # type: ignore[valid-type]
+) -> tuple[SecurePackage, LiveVoiceSession]:
     """
     Negotiate a high-performance AES-GCM LiveVoiceSession for live voice calling / audio streaming.
     Returns a tuple: (The encrypted SecurePackage to send, The local LiveVoiceSession).
@@ -120,7 +123,7 @@ def ReceiveLiveVoiceCall(
     sender_card: PublicCard | Identity | None = None,
     receiver: Identity | None = None,
     receiver_identity: Identity | None = None,
-) -> __import__("uxsp.core.live", fromlist=["LiveVoiceSession"]).LiveVoiceSession:  # type: ignore[valid-type]
+) -> LiveVoiceSession:
     """
     Accept a high-performance AES-GCM LiveVoiceSession from a peer for live voice calling.
     Returns the decrypted, ready-to-use LiveVoiceSession.

@@ -164,6 +164,7 @@ async def SendStream(
     filename: str | None = None,
     output_destination: str | Path | Any = None,
     metadata: dict[str, Any] | None = None,
+    data_type: str = "binary",
 ) -> AsyncIterator[SecurePackage] | Path | Any:
     """
     Asynchronously encrypt and stream multi-gigabyte files or binary generators chunk-by-chunk.
@@ -200,6 +201,7 @@ async def SendStream(
                 filename=fname,
                 metadata=chunk_meta,
             )
+            pkg.data_type = data_type
             chunk_idx += 1
             yield pkg
 
@@ -219,6 +221,7 @@ async def SendStream(
                 filename=fname,
                 metadata=chunk_meta,
             )
+            pkg.data_type = data_type
             yield pkg
 
     if output_destination is None:

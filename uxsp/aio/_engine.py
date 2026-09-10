@@ -60,17 +60,23 @@ async def async_secure_send_payload(
             metadata=meta,
         )
     else:
-        session_key = os.urandom(32)
-        env = sender_obj.seal_for(session_key, peer_card)
-        chunks = create_chunked_transfer(payload_bytes, chunk_size=16 * 1024)
-        sealed_chunks: list[dict[str, Any]] = []
-        for seq, chunk_bytes in enumerate(chunks):
-            ad = f"{env.envelope_nonce}:{seq}".encode()
-            enc_dict = encrypt(chunk_bytes, session_key, associated_data=ad)
-            sealed_chunks.append({
-                "c": enc_dict["ciphertext"].hex(),
-                "n": enc_dict["nonce"].hex(),
-            })
+        # Large payload chunking - session key approach
+        # Note: Best-effort memory zeroing of session key bytearray upon completion.
+        session_key = bytearray(os.urandom(32))
+        try:
+            env = sender_obj.seal_for(bytes(session_key), peer_card)
+            chunks = create_chunked_transfer(payload_bytes, chunk_size=16 * 1024)
+            sealed_chunks: list[dict[str, Any]] = []
+            for seq, chunk_bytes in enumerate(chunks):
+                ad = f"{env.envelope_nonce}:{seq}".encode()
+                enc_dict = encrypt(chunk_bytes, bytes(session_key), associated_data=ad)
+                sealed_chunks.append({
+                    "c": enc_dict["ciphertext"].hex(),
+                    "n": enc_dict["nonce"].hex(),
+                })
+        finally:
+            for i in range(len(session_key)):
+                session_key[i] = 0
 
         package = SecurePackage(
             sender_id=sender_obj.entity_id,
@@ -108,16 +114,48 @@ def _resolve_package_input(package_input: Any) -> SecurePackage:
     raise SecureReceiveError(f"Cannot resolve package from input of type {type(package_input).__name__}")
 
 
+class FreshnessOnlyReplayGuard:
+    """
+    Validates timestamp freshness and clock skew via the underlying guard,
+    while skipping nonce deduplication because it was already executed
+    atomically via AsyncNonceStore.check_and_mark().
+    """
+
+    def __init__(self, guard: Any) -> None:
+        self._guard = guard
+        self.window_seconds = guard.window_seconds
+        self.clock_skew = guard.clock_skew
+
+    def precheck(self, e: Any) -> None:
+        self._guard.check_freshness(e)
+
+    def commit(self, e: Any) -> None:
+        pass
+
+
+async def _check_async_replay(guard: Any, nonce: str) -> None:
+    from uxsp.core.envelope import EnvelopeExpiredError
+    if hasattr(guard._store, "check_and_mark"):
+        valid = await guard._store.check_and_mark(nonce, ttl_seconds=guard.window_seconds)
+    else:
+        valid = await guard._store.mark_used(nonce, ttl_seconds=guard.window_seconds)
+    if not valid:
+        raise EnvelopeExpiredError("Replay detected (async).")
+
+
 async def async_secure_receive_payload(
     sender_id: str | int | PublicCard | Identity | None = None,
     package_input: Any = None,
     expected_type: str | None = None,
     *,
-    receiver_identity: Identity | None = None,
-    receiver: Identity | None = None,
     sender: str | int | PublicCard | Identity | None = None,
     sender_card: PublicCard | Identity | None = None,
+    receiver: Identity | None = None,
+    receiver_identity: Identity | None = None,
 ) -> bytes:
+    """
+    Asynchronously decrypt and authenticate a received SecurePackage or payload input.
+    """
     snd_target = sender_card if sender_card is not None else (sender if sender is not None else sender_id)
     if snd_target is None:
         raise ValueError("Sender identity/card or sender_id must be provided.")
@@ -153,33 +191,18 @@ async def async_secure_receive_payload(
             f"Data type mismatch: expected '{expected_type}', got '{package.data_type}'"
         )
 
-    # In a fully async pipeline, the replay guard could be async too
-    # The existing ReplayGuard uses NonceStore, which is synchronous
-    # If ReplayGuard is updated to use AsyncNonceStore, we'd await it here, but open_from does that internally
-    # Wait, open_from is synchronous! So it cannot await an AsyncNonceStore.
-    # So if we have an AsyncNonceStore, we need to check replay asynchronously here or in open_from
+    guard = _GLOBAL_CONTEXT.get_replay_guard()
+    from uxsp.storage.noncestore import AsyncNonceStore
 
-    # We will let open_from use a sync replay guard for now, or bypass it and check here.
     if not package.is_chunked:
         if package.envelope is None:
             raise SecureReceiveError("Package is marked non-chunked but missing envelope.")
         env = Envelope.from_dict(package.envelope)
 
         # Async Replay Check
-        from uxsp.storage.noncestore import AsyncNonceStore
         if isinstance(guard._store, AsyncNonceStore):
-            if await guard._store.is_seen(env.envelope_nonce):
-                from uxsp.core.envelope import EnvelopeExpiredError
-                raise EnvelopeExpiredError("Replay detected (async).")
-            await guard._store.mark_used(env.envelope_nonce)
-            # pass dummy guard to bypass sync check in open_from
-            class DummyReplayGuard:
-                window_seconds = guard.window_seconds
-                clock_skew = guard.clock_skew
-                def precheck(self, e): pass
-                def commit(self, e): pass
-
-            payload_bytes = receiver_obj.open_from(env, peer_card, replay_guard=DummyReplayGuard())
+            await _check_async_replay(guard, env.envelope_nonce)
+            payload_bytes = receiver_obj.open_from(env, peer_card, replay_guard=FreshnessOnlyReplayGuard(guard))
         else:
             payload_bytes = receiver_obj.open_from(env, peer_card, replay_guard=guard)
 
@@ -193,29 +216,24 @@ async def async_secure_receive_payload(
         env = Envelope.from_dict(package.envelope)
 
         # Async Replay Check
-        from uxsp.storage.noncestore import AsyncNonceStore
         if isinstance(guard._store, AsyncNonceStore):
-            if await guard._store.is_seen(env.envelope_nonce):
-                from uxsp.core.envelope import EnvelopeExpiredError
-                raise EnvelopeExpiredError("Replay detected (async).")
-            await guard._store.mark_used(env.envelope_nonce)
-            class DummyReplayGuardChunked:
-                window_seconds = guard.window_seconds
-                clock_skew = guard.clock_skew
-                def precheck(self, e): pass
-                def commit(self, e): pass
-
-            session_key = receiver_obj.open_from(env, peer_card, replay_guard=DummyReplayGuardChunked())
+            await _check_async_replay(guard, env.envelope_nonce)
+            session_key_bytes = receiver_obj.open_from(env, peer_card, replay_guard=FreshnessOnlyReplayGuard(guard))
         else:
-            session_key = receiver_obj.open_from(env, peer_card, replay_guard=guard)
+            session_key_bytes = receiver_obj.open_from(env, peer_card, replay_guard=guard)
 
-        raw_chunks: list[bytes] = []
-        for seq, c_dict in enumerate(package.chunks):
-            ad = f"{env.envelope_nonce}:{seq}".encode()
-            ciphertext = bytes.fromhex(c_dict["c"])
-            nonce = bytes.fromhex(c_dict["n"])
-            c_bytes = decrypt(ciphertext, nonce, session_key, associated_data=ad)
-            raw_chunks.append(c_bytes)
+        session_key = bytearray(session_key_bytes)
+        try:
+            raw_chunks: list[bytes] = []
+            for seq, c_dict in enumerate(package.chunks):
+                ad = f"{env.envelope_nonce}:{seq}".encode()
+                ciphertext = bytes.fromhex(c_dict["c"])
+                nonce = bytes.fromhex(c_dict["n"])
+                c_bytes = decrypt(ciphertext, nonce, bytes(session_key), associated_data=ad)
+                raw_chunks.append(c_bytes)
 
-        _, reassembled = reassemble_chunked_transfer(raw_chunks)
-        return reassembled
+            _, reassembled = reassemble_chunked_transfer(raw_chunks)
+            return reassembled
+        finally:
+            for i in range(len(session_key)):
+                session_key[i] = 0

@@ -170,8 +170,20 @@ class UXSPFrame:
     def from_json(cls, text: str | bytes, max_bytes: int = MAX_FRAME_BYTES) -> UXSPFrame:
 
         if isinstance(text, str):
+            if len(text) > max_bytes:
+                raise FrameTooLargeError(
+                    f"Frame size {len(text)} bytes exceeds "
+                    f"maximum {max_bytes} bytes. "
+                    f"Possible memory exhaustion attack."
+                )
             raw = text.encode("utf-8")
         elif isinstance(text, (bytes, bytearray)):
+            if len(text) > max_bytes:
+                raise FrameTooLargeError(
+                    f"Frame size {len(text)} bytes exceeds "
+                    f"maximum {max_bytes} bytes. "
+                    f"Possible memory exhaustion attack."
+                )
             raw = bytes(text)
         else:
             raise UXSPWebSocketError(f"frame must be str or bytes, got {type(text).__name__}")

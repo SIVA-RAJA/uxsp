@@ -2,18 +2,16 @@
 Tests for UXSP HTTP transport negotiation headers (Sec-UXSP-Support, Sec-UXSP-Selected).
 """
 
-import pytest
 
 from uxsp.transport.http import (
     DEFAULT_UXSP_SELECTED,
-    DEFAULT_UXSP_SUPPORT,
     HEADER_SEC_UXSP_SELECTED,
     HEADER_SEC_UXSP_SUPPORT,
     UXSPHTTPRequest,
     UXSPHTTPResponse,
     negotiate_protocol,
 )
-from uxsp.core.envelope import Envelope
+
 
 def test_negotiate_protocol_valid():
     assert negotiate_protocol("v1.2, ml-kem-768") == "v1.2"

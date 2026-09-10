@@ -3,6 +3,7 @@ Tests for Django middleware automatic protocol fallback and upgrade.
 """
 
 import json
+
 import pytest
 
 django = pytest.importorskip("django")
@@ -19,6 +20,7 @@ if not settings.configured:
     )
 
 import django
+
 django.setup()
 
 from django.http import JsonResponse
@@ -27,7 +29,8 @@ from django.test import RequestFactory, override_settings
 import uxsp
 from uxsp.contrib.django import UXSPDjangoMiddleware
 from uxsp.core.identity import Identity
-from uxsp.transport.http import HEADER_SEC_UXSP_SELECTED, HEADER_SEC_UXSP_SUPPORT
+from uxsp.transport.http import HEADER_SEC_UXSP_SELECTED
+
 
 @pytest.fixture()
 def server_id():
@@ -168,4 +171,22 @@ def test_django_streaming_response_negotiation(server_id, client_id):
     assert resp.status_code == 200
     assert resp[HEADER_SEC_UXSP_SELECTED] == "v1.2"
     assert resp["X-UXSP-Package"] == "1"
+
+
+def test_django_middleware_cached_body_exceeds_max_request_size(server_id):
+    def dummy_view(request):
+        return JsonResponse({"status": "ok"})
+
+    middleware = UXSPDjangoMiddleware(dummy_view)
+    middleware.identity = server_id
+    middleware.max_request_size = 50
+
+    rf = RequestFactory()
+    req = rf.post("/api/test", data=b"short", content_type="application/json")
+    req._body = b"x" * 100
+
+    resp = middleware(req)
+    assert resp.status_code == 413
+    assert b"Payload Too Large" in resp.content
+
 

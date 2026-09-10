@@ -356,8 +356,21 @@ def test_flask_middleware_max_request_size_and_content_type(server_identity):
         _, code = res
         assert code == 413
 
+    # Body exceeds max_request_size via input stream -> 413
+    from unittest.mock import MagicMock
+    with app.test_request_context("/api/test", method="POST"):
+        req_obj = request._get_current_object()
+        mock_stream = MagicMock()
+        mock_stream.read.side_effect = [b"a" * 80, b"b" * 80, b""]
+        object.__setattr__(req_obj, "stream", mock_stream)
+        res = mw._before_request()
+        assert res is not None
+        _, code = res
+        assert code == 413
+
     # Strict Content-Type: "text/plain; application/uxsp+json" should not match UXSP content type
     res_ct = test_client.post("/api/test", data=b'{"hello": "world"}', headers={"Content-Type": "text/plain; application/uxsp+json"})
     assert res_ct.status_code == 200
+
 
 

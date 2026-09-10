@@ -38,6 +38,7 @@ Portable file locking:
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import os
 import re
@@ -322,6 +323,8 @@ class FileKeyStore(KeyStore):
     def __init__(self, path: str | Path) -> None:
         self._mtime_ns: int = 0
         self._size: int = 0
+        self._version: int = 0
+        self._hash: str | None = None
         self._path = Path(path)
         self._lock_path = Path(str(path) + ".lock")
         self._lock = threading.Lock()  # intra-process
@@ -357,6 +360,8 @@ class FileKeyStore(KeyStore):
             self._cache = {}
             self._mtime_ns = 0
             self._size = 0
+            self._version = 0
+            self._hash = None
             return self._cache
 
         stat = self._path.stat()
@@ -370,22 +375,53 @@ class FileKeyStore(KeyStore):
         ):
             return self._cache
 
-        with open(self._path) as f:
-            raw: dict[str, Any] = json.load(f)
+        with open(self._path, "rb") as f:
+            content_bytes = f.read()
 
-        self._cache = {eid: _deserialise_card(entry) for eid, entry in raw.items()}
+        file_hash = hashlib.sha256(content_bytes).hexdigest()
+        raw: dict[str, Any] = json.loads(content_bytes.decode("utf-8"))
+
+        if "_cards" in raw:
+            raw_cards = raw["_cards"]
+            file_version = raw.get("_version", 0)
+        else:
+            raw_cards = {k: v for k, v in raw.items() if not k.startswith("_")}
+            file_version = 0
+
+        if (
+            self._cache is not None
+            and self._hash == file_hash
+            and self._version == file_version
+        ):
+            self._mtime_ns = current_mtime_ns
+            self._size = current_size
+            return self._cache
+
+        self._cache = {eid: _deserialise_card(entry) for eid, entry in raw_cards.items()}
         self._mtime_ns = current_mtime_ns
         self._size = current_size
+        self._version = file_version
+        self._hash = file_hash
         return self._cache
 
     def _flush(self, store: dict[str, CardType]) -> None:
         """Write store atomically (called while exclusive locks are held)."""
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        raw = {eid: _serialise_card(card) for eid, card in store.items()}
+        raw_cards = {eid: _serialise_card(card) for eid, card in store.items()}
+        self._version += 1
+        cards_bytes = json.dumps(raw_cards, sort_keys=True).encode("utf-8")
+        content_hash = hashlib.sha256(cards_bytes).hexdigest()
+
+        file_content = {
+            "_version": self._version,
+            "_hash": content_hash,
+            "_cards": raw_cards,
+        }
+
         tmp_fd, tmp_path = tempfile.mkstemp(dir=str(self._path.parent))
         try:
             with os.fdopen(tmp_fd, "w") as f:
-                json.dump(raw, f, indent=2)
+                json.dump(file_content, f, indent=2)
             if sys.platform != "win32":
                 os.chmod(tmp_path, 0o600)
             Path(tmp_path).replace(self._path)
@@ -396,6 +432,7 @@ class FileKeyStore(KeyStore):
         stat_info = self._path.stat()
         self._mtime_ns = stat_info.st_mtime_ns
         self._size = stat_info.st_size
+        self._hash = hashlib.sha256(self._path.read_bytes()).hexdigest()
         self._cache = store
 
     # ── public API ────────────────────────────────────────────────────────────

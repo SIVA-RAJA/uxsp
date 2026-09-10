@@ -231,6 +231,15 @@ class AsyncNonceStore(ABC):
     @abstractmethod
     async def cleanup(self) -> int: ...
 
+    async def check_and_mark(self, nonce: str, ttl_seconds: int = 300) -> bool:
+        """
+        Atomically check if nonce was already seen and mark it as used.
+
+        Returns True if the nonce was unseen and successfully marked (first use).
+        Returns False if the nonce was already used/seen (replay detected).
+        """
+        return await self.mark_used(nonce, ttl_seconds)
+
 
 class AsyncRedisNonceStore(AsyncNonceStore):
     """
@@ -253,6 +262,12 @@ class AsyncRedisNonceStore(AsyncNonceStore):
                 f"Replay protection cannot be guaranteed. "
                 f"Reject this envelope."
             ) from e
+
+    async def check_and_mark(self, nonce: str, ttl_seconds: int = 300) -> bool:
+        """
+        Atomically check and record nonce using Redis SET ... NX EX ... in a single round-trip.
+        """
+        return await self.mark_used(nonce, ttl_seconds)
 
     async def is_seen(self, nonce: str) -> bool:
         try:

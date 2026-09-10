@@ -3,15 +3,17 @@ Tests for Flask middleware automatic protocol fallback and upgrade.
 """
 
 import json
+
 import pytest
 
 flask = pytest.importorskip("flask")
-from flask import Flask, jsonify, request, g
+from flask import Flask, g, jsonify, request
 
 import uxsp
 from uxsp.contrib.flask import UXSPFlaskMiddleware
 from uxsp.core.identity import Identity
 from uxsp.transport.http import HEADER_SEC_UXSP_SELECTED, HEADER_SEC_UXSP_SUPPORT
+
 
 @pytest.fixture()
 def server_id():

@@ -107,7 +107,6 @@ _patch_hybrid_verify.start()
 
 # Now safe to import
 from uxsp.core.signing import (
-    CRL,
     CardNotYetValidError,
     CertificateRevocationList,
     ExpiredCardError,

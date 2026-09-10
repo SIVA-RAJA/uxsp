@@ -149,10 +149,25 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
             except (ValueError, TypeError):
                 pass
 
-        # Read body bytes
-        body_bytes = await request.body()
-        if len(body_bytes) > self.max_request_size:
-            return JSONResponse(status_code=413, content={"error": "Payload Too Large", "detail": f"Request body exceeds maximum size of {self.max_request_size} bytes."})
+        # Stream body with byte counter to prevent memory exhaustion (OOM) on spoofed or chunked requests
+        if hasattr(request, "_body"):
+            body_bytes = request._body
+            if len(body_bytes) > self.max_request_size:
+                return JSONResponse(status_code=413, content={"error": "Payload Too Large", "detail": f"Request body exceeds maximum size of {self.max_request_size} bytes."})
+        elif "body" in request.__dict__:
+            body_bytes = await request.body()
+            if len(body_bytes) > self.max_request_size:
+                return JSONResponse(status_code=413, content={"error": "Payload Too Large", "detail": f"Request body exceeds maximum size of {self.max_request_size} bytes."})
+        else:
+            chunks: list[bytes] = []
+            total_size = 0
+            async for chunk in request.stream():
+                total_size += len(chunk)
+                if total_size > self.max_request_size:
+                    return JSONResponse(status_code=413, content={"error": "Payload Too Large", "detail": f"Request body exceeds maximum size of {self.max_request_size} bytes."})
+                chunks.append(chunk)
+            body_bytes = b"".join(chunks)
+            request._body = body_bytes
 
         is_uxsp_request = False
         package: SecurePackage | None = None
@@ -255,6 +270,10 @@ class UXSPFastAPIMiddleware(BaseHTTPMiddleware):
             if resp_body is None and body_iter is not None:
                 from starlette.responses import StreamingResponse
 
+                # Security Note (Traffic Analysis Side-Channel):
+                # When streaming encrypted NDJSON chunks, each chunk is encrypted independently.
+                # An observer can infer chunk counts, boundary timing, and approximate plaintext sizes.
+                # For high-security environments, consider chunk padding or monolithic chunked packages.
                 async def encrypt_stream():  # type: ignore[no-untyped-def]
                     async for chunk in body_iter:
                         if not chunk:

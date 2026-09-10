@@ -18,7 +18,7 @@ async def test_async_types_edge_cases(tmp_path):
             default_content_type="text/plain",
         )
 
-    # Line 35-37: > 64MB file returns SendStream generator
+    # Line 35-37: > 64MB file returns async SendStream iterator
     large_file = tmp_path / "large.bin"
     with open(large_file, "wb") as f:
         f.truncate(65 * 1024 * 1024)
@@ -30,8 +30,8 @@ async def test_async_types_edge_cases(tmp_path):
         default_filename="x",
         default_content_type="application/octet-stream",
     )
-    import types
-    assert isinstance(res, types.GeneratorType)
+    from collections.abc import AsyncIterator
+    assert isinstance(res, AsyncIterator)
 
     # Line 53-56: Invalid type
     with pytest.raises(SecureSendError, match="file_path_or_bytes must be a file path or bytes"):

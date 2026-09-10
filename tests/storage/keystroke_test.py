@@ -468,6 +468,32 @@ class TestFileKeyStore:
         result = store._load()
         assert result == {}
 
+    def test_legacy_format_and_hash_cache_invalidation(self, tmp_path, pub_card):
+        """FileKeyStore must read legacy flat dict files and upgrade to versioned format."""
+        p = tmp_path / "legacy.json"
+        import json
+        raw = {"legacy-id": ks._serialise_card(pub_card)}
+        p.write_text(json.dumps(raw))
+
+        store = ks.FileKeyStore(p)
+        assert store.get("legacy-id") is not None
+        store.put(FakePublicCard("new-id"))
+        data = json.loads(p.read_text())
+        assert "_version" in data
+        assert "_hash" in data
+        assert "_cards" in data
+
+    def test_cache_hit_on_same_hash_different_mtime(self, tmp_file_store, pub_card):
+        """When mtime changes but hash/version match, cache returns without re-deserializing."""
+        tmp_file_store.put(pub_card)
+        tmp_file_store.get("entity-pub")
+        # Change mtime
+        new_mtime = tmp_file_store._mtime_ns + 10_000_000
+        os.utime(tmp_file_store._path, ns=(new_mtime, new_mtime))
+        res = tmp_file_store.get("entity-pub")
+        assert res is not None
+        assert tmp_file_store._mtime_ns == new_mtime
+
     def test_flush_sets_permissions_posix(self, tmp_file_store, pub_card, monkeypatch):
         """On non-Windows, flush must call os.chmod with 0o600."""
         chmod_calls = []

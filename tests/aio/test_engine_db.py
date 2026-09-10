@@ -31,6 +31,13 @@ class MockAsyncNonceStore(AsyncNonceStore):
     def __init__(self):
         self.seen = set()
     async def mark_used(self, nonce, ttl_seconds=300):
+        if nonce in self.seen:
+            return False
+        self.seen.add(nonce)
+        return True
+    async def check_and_mark(self, nonce, ttl_seconds=300):
+        if nonce in self.seen:
+            return False
         self.seen.add(nonce)
         return True
     async def is_seen(self, nonce):
@@ -115,6 +122,29 @@ async def test_engine_async_noncestore():
 
     with pytest.raises(EnvelopeExpiredError, match="Replay detected"):
         await async_secure_receive_payload(sender_card=sender.public_card(), package_input=pkg_large)
+
+    # Legacy store without check_and_mark
+    class LegacyStore:
+        def __init__(self):
+            self.seen = set()
+        async def mark_used(self, nonce, ttl_seconds=300):
+            if nonce in self.seen:
+                return False
+            self.seen.add(nonce)
+            return True
+        async def is_seen(self, nonce):
+            return nonce in self.seen
+        async def cleanup(self):
+            return 0
+
+    AsyncNonceStore.register(LegacyStore)
+    legacy_store = LegacyStore()
+    _GLOBAL_CONTEXT._replay_guard = ReplayGuard(legacy_store)
+    pkg_leg = await async_secure_send_payload(receiver=receiver, payload_bytes=b"legacy", sender=sender)
+    dec_leg = await async_secure_receive_payload(sender_card=sender.public_card(), package_input=pkg_leg)
+    assert dec_leg == b"legacy"
+    with pytest.raises(EnvelopeExpiredError, match="Replay detected"):
+        await async_secure_receive_payload(sender_card=sender.public_card(), package_input=pkg_leg)
 
 @pytest.mark.asyncio
 async def test_engine_resolve_input(tmp_path):

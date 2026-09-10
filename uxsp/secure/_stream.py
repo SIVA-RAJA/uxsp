@@ -60,6 +60,22 @@ def SendStream(
     If output_destination is provided (file path or writable file descriptor), serializes line-delimited
     JSON packages directly to the output file/stream and returns output_destination.
     Otherwise, returns a Generator yielding SecurePackage objects chunk-by-chunk.
+
+    Security & Side-Channel Note (Traffic Analysis):
+        In NDJSON streaming mode, each chunk is encrypted independently into a distinct
+        SecurePackage. An observer on the network wire can infer:
+        - The exact number of chunks
+        - The timing of chunk boundaries
+        - The approximate plaintext size of each chunk
+        For applications where traffic analysis is a concern, consider padding chunks to
+        uniform sizes and introducing random timing jitter, or use monolithic chunked
+        transfers (where chunks are packaged inside a single envelope session).
+
+    Replay Protection:
+        Each chunk is produced via SendBinary, which automatically generates a unique
+        cryptographic envelope nonce per chunk. When consumed via ReceiveStream, each
+        chunk passes through the active ReplayGuard with its own unique nonce, preventing
+        false replay rejections while still protecting each chunk against replay attacks.
     """
     fname = filename
     if isinstance(stream_or_path, (str, Path)):

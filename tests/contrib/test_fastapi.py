@@ -548,3 +548,26 @@ def test_fastapi_middleware_max_request_size_and_content_type(server_identity):
     assert res_ct.status_code == 200
 
 
+def test_fastapi_middleware_cached_body_exceeds(server_identity):
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from starlette.requests import Request
+    app = FastAPI()
+    middleware = UXSPFastAPIMiddleware(app, identity=server_identity, max_request_size=50)
+
+    # Test with req._body already set
+    req = Request({"type": "http", "method": "POST", "path": "/api/test", "headers": []})
+    req._body = b"x" * 100
+    res = asyncio.run(middleware.dispatch(req, AsyncMock()))
+    assert res.status_code == 413
+
+    # Test with req.body mocked in instance dict
+    req2 = Request({"type": "http", "method": "POST", "path": "/api/test", "headers": []})
+    async def big_body():
+        return b"y" * 100
+    req2.body = big_body
+    res2 = asyncio.run(middleware.dispatch(req2, AsyncMock()))
+    assert res2.status_code == 413
+
+

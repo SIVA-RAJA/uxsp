@@ -3,6 +3,7 @@ Tests for FastAPI middleware automatic protocol fallback and upgrade.
 """
 
 import json
+
 import pytest
 
 fastapi = pytest.importorskip("fastapi")
@@ -13,6 +14,7 @@ import uxsp
 from uxsp.contrib.fastapi import UXSPFastAPIMiddleware
 from uxsp.core.identity import Identity
 from uxsp.transport.http import HEADER_SEC_UXSP_SELECTED, HEADER_SEC_UXSP_SUPPORT
+
 
 @pytest.fixture()
 def server_id():

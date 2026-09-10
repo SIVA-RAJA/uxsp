@@ -832,13 +832,14 @@ class TrustStore:
         lock_path = Path(str(path) + ".lock")
 
         if sys.platform != "win32":
-            lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_APPEND, 0o600)
+            lock_target: int | Path = os.open(
+                lock_path, os.O_CREAT | os.O_RDWR | os.O_APPEND, 0o600
+            )
             os.chmod(lock_path, 0o600)
-            lock_file = open(lock_fd, "a")
         else:
-            lock_file = open(lock_path, "a")
+            lock_target = lock_path
 
-        with lock_file as lf:
+        with open(lock_target, "a") as lf:
             _lock_exclusive(lf)
             try:
                 tmp_fd, tmp_path = tempfile.mkstemp(dir=str(p.parent))

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import mimetypes
-from collections.abc import Generator
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
@@ -28,17 +28,16 @@ async def async_send_file_type(
     filename: str | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
-) -> SecurePackage | Generator[SecurePackage, None, None]:
+) -> SecurePackage | AsyncIterator[SecurePackage]:
     if isinstance(file_path_or_bytes, (str, Path)):
         if not _safe_is_file(file_path_or_bytes):
             raise SecureSendError(f"File not found: {file_path_or_bytes}")
         p = Path(file_path_or_bytes)
         if p.stat().st_size > 64 * 1024 * 1024:
-            from uxsp.secure._stream import SendStream
-            # Stream is already somewhat async or can be run in thread
-            return SendStream(  # type: ignore[return-value]
-                receiver_id=receiver_id,
+            from uxsp.aio.stream import SendStream
+            return await SendStream(
                 stream_or_path=p,
+                receiver_id=receiver_id,
                 receiver=receiver,
                 sender=sender,
                 sender_identity=sender_identity,

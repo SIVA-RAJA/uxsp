@@ -150,9 +150,25 @@ class UXSPFlaskMiddleware:
             except (ValueError, TypeError):
                 pass
 
-        body_bytes = request.get_data()
-        if len(body_bytes) > self.max_request_size:
-            return jsonify({"error": "Payload Too Large", "detail": f"Request body exceeds maximum size of {self.max_request_size} bytes."}), 413
+        # Stream body with byte counter to prevent memory exhaustion (OOM) on spoofed or chunked requests
+        if hasattr(request, "_cached_data") and request._cached_data is not None:
+            body_bytes = request._cached_data
+            if len(body_bytes) > self.max_request_size:
+                return jsonify({"error": "Payload Too Large", "detail": f"Request body exceeds maximum size of {self.max_request_size} bytes."}), 413
+        else:
+            chunks: list[bytes] = []
+            total_size = 0
+            chunk_size = 64 * 1024
+            while True:
+                chunk = request.stream.read(chunk_size)
+                if not chunk:
+                    break
+                total_size += len(chunk)
+                if total_size > self.max_request_size:
+                    return jsonify({"error": "Payload Too Large", "detail": f"Request body exceeds maximum size of {self.max_request_size} bytes."}), 413
+                chunks.append(chunk)
+            body_bytes = b"".join(chunks)
+            request._cached_data = body_bytes
 
         is_uxsp_request = False
         package: SecurePackage | None = None

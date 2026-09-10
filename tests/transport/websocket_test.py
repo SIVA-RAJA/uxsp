@@ -215,6 +215,16 @@ class TestFromJsonErrors:
         with pytest.raises(FrameTooLargeError, match="exceeds"):
             UXSPFrame.from_json(big)
 
+    def test_frame_too_large_bytes_raises(self):
+        big_bytes = b"x" * (MAX_FRAME_BYTES + 1)
+        with pytest.raises(FrameTooLargeError, match="exceeds"):
+            UXSPFrame.from_json(big_bytes)
+
+    def test_frame_too_large_multibyte_utf8_raises(self):
+        multibyte = "€" * (MAX_FRAME_BYTES // 2)
+        with pytest.raises(FrameTooLargeError, match="exceeds"):
+            UXSPFrame.from_json(multibyte)
+
     def test_invalid_json_raises(self):
         with pytest.raises(UXSPWebSocketError, match="Invalid JSON"):
             UXSPFrame.from_json("{not json}")

@@ -45,3 +45,26 @@ async def test_async_redis_noncestore():
 
     # cleanup
     assert await store.cleanup() == 0
+
+    # check_and_mark (atomic success and replay)
+    mock_redis.set.return_value = True
+    assert await store.check_and_mark("nonce_atomic") is True
+    mock_redis.set.return_value = False
+    assert await store.check_and_mark("nonce_atomic") is False
+
+
+@pytest.mark.asyncio
+async def test_async_noncestore_base_default_check_and_mark():
+    from uxsp.storage.noncestore import AsyncNonceStore
+
+    class CustomStore(AsyncNonceStore):
+        async def mark_used(self, nonce: str, ttl_seconds: int = 300) -> bool:
+            return nonce == "ok"
+        async def is_seen(self, nonce: str) -> bool:
+            return False
+        async def cleanup(self) -> int:
+            return 0
+
+    custom = CustomStore()
+    assert await custom.check_and_mark("ok") is True
+    assert await custom.check_and_mark("bad") is False

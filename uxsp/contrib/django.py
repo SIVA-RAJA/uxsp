@@ -133,9 +133,25 @@ class UXSPDjangoMiddleware:
             except (ValueError, TypeError):
                 pass
 
-        body_bytes = request.body
-        if len(body_bytes) > self.max_request_size:
-            return JsonResponse({"error": "Payload Too Large", "detail": f"Request body exceeds maximum size of {self.max_request_size} bytes."}, status=413)
+        # Stream body with byte counter to prevent memory exhaustion (OOM) on spoofed or chunked requests
+        if hasattr(request, "_body") and request._body is not None:
+            body_bytes = request._body
+            if len(body_bytes) > self.max_request_size:
+                return JsonResponse({"error": "Payload Too Large", "detail": f"Request body exceeds maximum size of {self.max_request_size} bytes."}, status=413)
+        else:
+            chunks: list[bytes] = []
+            total_size = 0
+            chunk_size = 64 * 1024
+            while True:
+                chunk = request.read(chunk_size)
+                if not chunk:
+                    break
+                total_size += len(chunk)
+                if total_size > self.max_request_size:
+                    return JsonResponse({"error": "Payload Too Large", "detail": f"Request body exceeds maximum size of {self.max_request_size} bytes."}, status=413)
+                chunks.append(chunk)
+            body_bytes = b"".join(chunks)
+            request._body = body_bytes
 
         is_uxsp_request = False
         package: SecurePackage | None = None

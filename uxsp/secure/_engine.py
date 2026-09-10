@@ -79,17 +79,22 @@ def _secure_send_payload(
         )
     else:
         # Large payload chunking - session key approach
-        session_key = os.urandom(32)
-        env = sender_obj.seal_for(session_key, peer_card)
-        chunks = create_chunked_transfer(payload_bytes, chunk_size=16 * 1024)
-        sealed_chunks: list[dict[str, Any]] = []
-        for seq, chunk_bytes in enumerate(chunks):
-            ad = f"{env.envelope_nonce}:{seq}".encode()
-            enc_dict = encrypt(chunk_bytes, session_key, associated_data=ad)
-            sealed_chunks.append({
-                "c": enc_dict["ciphertext"].hex(),
-                "n": enc_dict["nonce"].hex(),
-            })
+        # Note: Best-effort memory zeroing of session key bytearray upon completion.
+        session_key = bytearray(os.urandom(32))
+        try:
+            env = sender_obj.seal_for(bytes(session_key), peer_card)
+            chunks = create_chunked_transfer(payload_bytes, chunk_size=16 * 1024)
+            sealed_chunks: list[dict[str, Any]] = []
+            for seq, chunk_bytes in enumerate(chunks):
+                ad = f"{env.envelope_nonce}:{seq}".encode()
+                enc_dict = encrypt(chunk_bytes, bytes(session_key), associated_data=ad)
+                sealed_chunks.append({
+                    "c": enc_dict["ciphertext"].hex(),
+                    "n": enc_dict["nonce"].hex(),
+                })
+        finally:
+            for i in range(len(session_key)):
+                session_key[i] = 0
 
         package = SecurePackage(
             sender_id=sender_obj.entity_id,
@@ -169,18 +174,22 @@ def _secure_receive_payload(
             raise SecureReceiveError("Package is marked chunked but missing session key envelope.")
 
         env = Envelope.from_dict(package.envelope)
-        session_key = receiver_obj.open_from(env, peer_card, replay_guard=guard)
+        session_key_bytes = receiver_obj.open_from(env, peer_card, replay_guard=guard)
+        session_key = bytearray(session_key_bytes)
+        try:
+            raw_chunks: list[bytes] = []
+            for seq, c_dict in enumerate(package.chunks):
+                ad = f"{env.envelope_nonce}:{seq}".encode()
+                ciphertext = bytes.fromhex(c_dict["c"])
+                nonce = bytes.fromhex(c_dict["n"])
+                c_bytes = decrypt(ciphertext, nonce, bytes(session_key), associated_data=ad)
+                raw_chunks.append(c_bytes)
 
-        raw_chunks: list[bytes] = []
-        for seq, c_dict in enumerate(package.chunks):
-            ad = f"{env.envelope_nonce}:{seq}".encode()
-            ciphertext = bytes.fromhex(c_dict["c"])
-            nonce = bytes.fromhex(c_dict["n"])
-            c_bytes = decrypt(ciphertext, nonce, session_key, associated_data=ad)
-            raw_chunks.append(c_bytes)
-
-        _, reassembled = reassemble_chunked_transfer(raw_chunks)
-        return reassembled
+            _, reassembled = reassemble_chunked_transfer(raw_chunks)
+            return reassembled
+        finally:
+            for i in range(len(session_key)):
+                session_key[i] = 0
 
 
 def _resolve_download_target(

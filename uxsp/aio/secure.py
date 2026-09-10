@@ -8,6 +8,7 @@ ASGI frameworks (FastAPI, Starlette, Quart) and WebSocket connections.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
 import uxsp.secure as sync_secure
@@ -128,11 +129,169 @@ async def ReceiveContact(*args: Any, **kwargs: Any) -> Any:
 
 # ── 3. POLYMORPHIC DISPATCHERS ─────────────────────────────
 
-async def Send(*args: Any, **kwargs: Any) -> Any:
-    return await asyncio.to_thread(sync_secure.Send, *args, **kwargs)
+async def Send(
+    receiver_id: str | int | PublicCard | Identity | None = None,
+    item: Any = None,
+    *,
+    receiver: str | int | PublicCard | Identity | None = None,
+    sender: Identity | None = None,
+    sender_identity: Identity | None = None,
+    data_type: str | None = None,
+    output_file: str | Path | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> Any:
+    """
+    Async polymorphic sender: automatically inspects `item` or `data_type`
+    and routes directly to native async handlers (e.g. SendVideo, SendFile).
+    """
+    import json
 
-async def Receive(*args: Any, **kwargs: Any) -> Any:
-    return await asyncio.to_thread(sync_secure.Receive, *args, **kwargs)
+    from uxsp.secure._errors import SecureSendError
+    from uxsp.secure._utils import _safe_is_file
+
+    rec = receiver if receiver is not None else receiver_id
+    snd = sender if sender is not None else sender_identity
+
+    if data_type is not None:
+        dt = data_type.lower()
+        if dt == "video":
+            return await SendVideo(receiver=rec, video_path_or_bytes=item, sender=snd, output_file=output_file, metadata=metadata)
+        if dt == "audio":
+            return await SendAudio(receiver=rec, audio_path_or_bytes=item, sender=snd, output_file=output_file, metadata=metadata)
+        if dt in {"photo", "image"}:
+            return await SendPhoto(receiver=rec, photo_path_or_bytes=item, sender=snd, output_file=output_file, metadata=metadata)
+        if dt == "text":
+            return await SendText(receiver=rec, text=item, sender=snd, output_file=output_file, metadata=metadata)
+        if dt in {"document", "doc"}:
+            return await SendDocument(receiver=rec, doc_path_or_bytes=item, sender=snd, output_file=output_file, metadata=metadata)
+        if dt == "pdf":
+            return await SendPDF(receiver=rec, pdf_path_or_bytes=item, sender=snd, output_file=output_file, metadata=metadata)
+        if dt in {"archive", "zip"}:
+            return await SendArchive(receiver=rec, archive_path_or_bytes=item, sender=snd, output_file=output_file, metadata=metadata)
+        if dt == "voice":
+            return await SendVoice(receiver=rec, voice_path_or_bytes=item, sender=snd, output_file=output_file, metadata=metadata)
+        if dt == "json":
+            return await SendJSON(receiver=rec, data=item, sender=snd, output_file=output_file, metadata=metadata)
+        if dt == "html":
+            return await SendHTML(receiver=rec, html_content=item, sender=snd, output_file=output_file, metadata=metadata)
+        if dt == "contact":
+            return await SendContact(receiver=rec, contact_data=item, sender=snd, output_file=output_file, metadata=metadata)
+        if dt == "location":
+            if isinstance(item, dict):
+                lat = float(item.get("latitude", item.get("lat", 0.0)))
+                lon = float(item.get("longitude", item.get("lon", 0.0)))
+                desc = item.get("description")
+            elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                lat, lon = float(item[0]), float(item[1])
+                desc = None
+            else:
+                lat, lon, desc = 0.0, 0.0, None
+            return await SendLocation(receiver=rec, latitude=lat, longitude=lon, sender=snd, description=desc, output_file=output_file, metadata=metadata)
+        if dt == "binary":
+            return await SendBinary(receiver=rec, data=item, sender=snd, output_file=output_file, metadata=metadata)
+        if dt == "file":
+            return await SendFile(receiver=rec, file_path_or_bytes=item, sender=snd, output_file=output_file, metadata=metadata)
+        if dt in {"live_voice_session", "live_voice_call", "live_voice", "voice_call"}:
+            pkg, _ = await SendLiveVoiceCall(receiver=rec, sender=snd, metadata=metadata)
+            return pkg
+        if dt == "live_session":
+            pkg, _ = await SendLiveSession(receiver=rec, sender=snd, metadata=metadata)
+            return pkg
+
+    if isinstance(item, (str, Path)):
+        if _safe_is_file(item):
+            p = Path(item)
+            ext = p.suffix.lower()
+            if ext in {".mp4", ".mkv", ".avi", ".mov", ".webm"}:
+                return await SendVideo(receiver=rec, video_path_or_bytes=p, sender=snd, output_file=output_file, metadata=metadata)
+            if ext in {".mp3", ".wav", ".aac", ".flac", ".m4a"}:
+                return await SendAudio(receiver=rec, audio_path_or_bytes=p, sender=snd, output_file=output_file, metadata=metadata)
+            if ext in {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"}:
+                return await SendPhoto(receiver=rec, photo_path_or_bytes=p, sender=snd, output_file=output_file, metadata=metadata)
+            if ext == ".pdf":
+                return await SendPDF(receiver=rec, pdf_path_or_bytes=p, sender=snd, output_file=output_file, metadata=metadata)
+            if ext in {".zip", ".tar", ".gz", ".7z", ".bz2"}:
+                return await SendArchive(receiver=rec, archive_path_or_bytes=p, sender=snd, output_file=output_file, metadata=metadata)
+            if ext in {".html", ".htm"}:
+                text_content = await asyncio.to_thread(p.read_text, encoding="utf-8")
+                return await SendHTML(receiver=rec, html_content=text_content, sender=snd, output_file=output_file, metadata=metadata)
+            if ext == ".json":
+                json_data = await asyncio.to_thread(lambda: json.loads(p.read_text(encoding="utf-8")))
+                return await SendJSON(receiver=rec, data=json_data, sender=snd, output_file=output_file, metadata=metadata)
+            return await SendFile(receiver=rec, file_path_or_bytes=p, sender=snd, output_file=output_file, metadata=metadata)
+        elif isinstance(item, str):
+            return await SendText(receiver=rec, text=item, sender=snd, output_file=output_file, metadata=metadata)
+
+    if isinstance(item, (dict, list)):
+        return await SendJSON(receiver=rec, data=item, sender=snd, output_file=output_file, metadata=metadata)
+
+    if isinstance(item, (bytes, bytearray)):
+        return await SendBinary(receiver=rec, data=item, sender=snd, output_file=output_file, metadata=metadata)
+
+    raise SecureSendError(f"Cannot automatically infer data type for item of type {type(item).__name__}")
+
+
+async def Receive(
+    sender_id: str | int | PublicCard | Identity | None = None,
+    package: Any = None,
+    download_path: str | Path | None = None,
+    *,
+    sender: str | int | PublicCard | Identity | None = None,
+    sender_card: PublicCard | Identity | None = None,
+    receiver: Identity | None = None,
+    receiver_identity: Identity | None = None,
+) -> Any:
+    """
+    Async polymorphic receiver: automatically detects data_type from the secure package
+    and dispatches to the matching async Receive* handler.
+    """
+    from uxsp.secure._engine import _resolve_package_input
+
+    snd = sender_card if sender_card is not None else (sender if sender is not None else sender_id)
+    rec = receiver if receiver is not None else receiver_identity
+    pkg = _resolve_package_input(package)
+    dt = pkg.data_type.lower()
+
+    if dt == "video":
+        return await ReceiveVideo(sender=snd, download_path=download_path, package=pkg, receiver=rec)
+    if dt == "audio":
+        return await ReceiveAudio(sender=snd, download_path=download_path, package=pkg, receiver=rec)
+    if dt in {"photo", "image"}:
+        return await ReceivePhoto(sender=snd, download_path=download_path, package=pkg, receiver=rec)
+    if dt == "text":
+        return await ReceiveText(sender=snd, package=pkg, download_path=download_path, receiver=rec)
+    if dt in {"document", "doc"}:
+        return await ReceiveDocument(sender=snd, download_path=download_path, package=pkg, receiver=rec)
+    if dt == "pdf":
+        return await ReceivePDF(sender=snd, download_path=download_path, package=pkg, receiver=rec)
+    if dt == "file":
+        return await ReceiveFile(sender=snd, download_path=download_path, package=pkg, receiver=rec)
+    if dt == "binary":
+        return await ReceiveBinary(sender=snd, package=pkg, download_path=download_path, receiver=rec)
+    if dt == "json":
+        return await ReceiveJSON(sender=snd, package=pkg, download_path=download_path, receiver=rec)
+    if dt == "html":
+        return await ReceiveHTML(sender=snd, package=pkg, download_path=download_path, receiver=rec)
+    if dt in {"archive", "zip"}:
+        return await ReceiveArchive(sender=snd, download_path=download_path, package=pkg, receiver=rec)
+    if dt == "voice":
+        return await ReceiveVoice(sender=snd, download_path=download_path, package=pkg, receiver=rec)
+    if dt == "location":
+        return await ReceiveLocation(sender=snd, package=pkg, receiver=rec)
+    if dt == "contact":
+        return await ReceiveContact(sender=snd, package=pkg, receiver=rec)
+    if dt == "live_session":
+        return await ReceiveLiveSession(sender=snd, package=pkg, receiver=rec)
+    if dt in {"live_voice_session", "live_voice_call", "live_voice", "voice_call"}:
+        return await ReceiveLiveVoiceCall(sender=snd, package=pkg, receiver=rec)
+
+    from uxsp.aio._engine import async_secure_receive_payload
+    return await async_secure_receive_payload(
+        sender_id=snd,
+        package_input=pkg,
+        receiver=rec,
+        expected_type=dt,
+    )
 
 # ── 4. LIVE SESSIONS ────────────────────────────────────────
 
