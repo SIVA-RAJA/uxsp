@@ -81,19 +81,27 @@ UXSP utilizes `liboqs` for C-native Post-Quantum Cryptography acceleration. You 
 
 ---
 
-## 🚀 How to Access the Project (Documentation)
+## 🚀 Documentation & Specifications
 
-For detailed step-by-step developer tutorials, architectural explanations, and complete code examples, please head to the **`docs/`** directory.
+UXSP provides both formal protocol engineering specifications and hands-on developer tutorials:
 
-The documentation is written to be perfectly clear, even if you are a new programmer without deep domain knowledge in cryptography or networking. 
+### 📜 Formal Protocol Specifications (`docs/`)
+For security auditors, cryptographers, and engineers implementing UXSP in other languages (Rust, Go, C/C++, Zig, Swift):
+- **[Formal Protocol Specification (`docs/protocol_specification.md`)](./docs/protocol_specification.md)**: Security proofs, IND-CCA2 threat model, canonical serialization, handshake state machine, session lifecycle, and error code registry.
+- **[Exact Wire Format & Byte-Level Encoding (`docs/wire_format.md`)](./docs/wire_format.md)**: Exact bit-level framing, byte offsets, `UXSP/1` binary layout, JSON wire schema, and annotated hex dumps.
+- **[Documentation Index (`docs/index.md`)](./docs/index.md)**: Protocol specifications overview and architecture portal.
 
-Start by reading the **[Index (`docs/index.md`)](./docs/index.md)**, which will guide you through:
-- High-level and Low-level APIs
-- Synchronous vs. Asynchronous Usage
-- Live Video, Audio, and CCTV Streaming
-- Django, Flask, and FastAPI Middleware configurations
-- Replay Protection with NonceStores
-- The UXSP Command Line Interface (CLI)
+### 📖 Developer Tutorials & Framework Guides (`tutorial/`)
+For application developers building software with UXSP:
+- **[Tutorials Portal (`tutorial/index.md`)](./tutorial/index.md)**: Step-by-step guides for all features.
+- **[High-Level APIs (`tutorial/high_level_api.md`)](./tutorial/high_level_api.md)**: 1-line cryptographic operations across 14 polymorphic data types.
+- **[Low-Level APIs (`tutorial/low_level_api.md`)](./tutorial/low_level_api.md)**: Custom cryptographic workflows and key management.
+- **[Asynchronous Engine (`tutorial/async_api.md`)](./tutorial/async_api.md)**: High-throughput async I/O pipelines.
+- **[Live Media & WebRTC (`tutorial/streaming_and_media.md`)](./tutorial/streaming_and_media.md)**: Encrypted real-time video, voice calls, and CCTV feeds.
+- **[Web Framework Middlewares (`tutorial/frameworks/`)](./tutorial/frameworks/fastapi.md)**: Drop-in protection for **FastAPI**, **Django**, and **Flask**.
+- **[Replay Protection (`tutorial/noncestore.md`)](./tutorial/noncestore.md)**: Durable NonceStores (Memory, Redis, Postgres).
+- **[CLI Tooling (`tutorial/cli.md`)](./tutorial/cli.md)**: Command-line identity and card management.
+- **[Frontend Integration (`tutorial/web_frontend.md`)](./tutorial/web_frontend.md)**: Browser TypeScript/JavaScript SDK.
 
 ---
 

@@ -1,48 +1,83 @@
-# UXSP Developer Documentation
+# UXSP Documentation & Protocol Specification
 
-Welcome to the official developer documentation for the **Universal Exchange Security Protocol (UXSP v1.2.0)**.
+Welcome to the official documentation and standards portal for the **Universal Exchange Security Protocol (UXSP)**.
 
-This documentation is written for developers of all skill levels. You do not need to be a cryptography expert or understand complex networking to secure your applications with UXSP. If you can read standard Python code, you can use UXSP!
-
-## 📖 How to Read These Docs
-
-If you are new to UXSP, we recommend reading through the **High-Level APIs** first. It covers how to quickly encrypt and decrypt data using the simple `Send` and `Receive` tools.
-
-Once you understand the basics, you can move on to specific topics like protecting your Web Framework (Django, FastAPI, Flask) or exploring live video streaming.
+UXSP is an enterprise-grade, hybrid post-quantum cryptographic security protocol designed to deliver end-to-end confidentiality, authenticity, forward secrecy, and replay resistance across heterogenous transport networks (HTTP/HTTPS, WebSockets, WebRTC, binary sockets, and offline storage).
 
 ---
 
-## 📚 Table of Contents
+## 🏛️ Authoritative Protocol Specifications
 
-### 1. The Core APIs
-- 🔐 **[High-Level APIs (`uxsp.secure` & `uxsp.aio`)](./high_level_api.md)**
-  - Discover how to securely send and receive Text, JSON, Files, Images, Videos, Audio, and more with just a single line of code.
-  - Learn how to manage Identities, when to use the Asynchronous (`aio`) API for high performance, and how to rotate your security keys.
-- ⚙️ **[Low-Level APIs (Core Concepts)](./low_level_api.md)**
-  - Dive into the advanced concepts. Learn how manual configuration works, how the core cryptography operates, and how to connect low-level tools with high-level ones.
+For security architects, cryptographers, compliance auditors, and engineers implementing UXSP clients in other languages (such as **Rust, Go, C/C++, Zig, Swift, Java, C#**), refer to the authoritative formal engineering specifications:
 
-### 2. Live Media & Streaming
-- 🎥 **[Live Media & WebRTC (Video, Voice, CCTV) ](./streaming_and_media.md)**
-  - Learn how to establish real-time, encrypted Video and Voice calls.
-  - Discover how to integrate and secure live CCTV camera feeds using `SendLiveSession` and `SendLiveVoiceCall`.
-
-### 3. Web Framework Middlewares
-- 🐍 **[Django Integration Guide](./frameworks/django.md)**
-  - Protect Django views using `UXSPDjangoMiddleware` and `@protect`. Learn why ordering matters and exactly where to put them.
-- 🚀 **[FastAPI Integration Guide](./frameworks/fastapi.md)**
-  - Secure FastAPI applications and endpoints automatically.
-- 🧪 **[Flask Integration Guide](./frameworks/flask.md)**
-  - Add drop-in WSGI protection for your Flask routes.
-
-### 4. Advanced Security Features
-- 🛡️ **[Replay Protection (NonceStores)](./noncestore.md)**
-  - Understand how UXSP prevents attackers from reusing old, intercepted messages (Replay Attacks).
-  - Learn how to integrate `MemoryNonceStore`, `RedisNonceStore`, `PostgresNonceStore` and their `Async` counterparts into your apps.
-- 💻 **[The UXSP CLI Tool](./cli.md)**
-  - Learn how to use the built-in Command Line Interface for generating keys, managing identities, and diagnosing issues during development and production.
-- 🌐 **[Frontend Integration (NPM Package)](./web_frontend.md)**
-  - Learn how to use the `@siva_raja/uxsp` package in your JavaScript/TypeScript frontend so that data is encrypted *before* it ever leaves the user's browser.
+| Specification Document | Summary | RFC Status |
+| :--- | :--- | :--- |
+| 📜 **[Formal Protocol Specification](./protocol_specification.md)** | Formal cryptographic protocol specification, security proofs, IND-CCA2 / EUF-CMA threat model, canonical serialization rules, algorithm suites, identity management, Nonce/timestamp freshness semantics, sequence ordering, 3-step mutual handshake state machine, session lifecycle, version negotiation, and formal error taxonomy. | Standard |
+| ⚡ **[Exact Wire Format & Byte-Level Encoding](./wire_format.md)** | Exact byte-level framing, binary layouts, `UXSP/1` magic bytes, header fields, offsets, lengths, bitmasks, big-endian encoding, internal payload framing (`UXSP-PAYLOAD-1`, `UXSP-CHUNK-1`), JSON wire envelope schemas, and complete annotated hex test vectors. | Standard |
 
 ---
 
-> **Tip:** Start with the **[High-Level APIs](./high_level_api.md)** to see how incredibly simple UXSP is to use!
+## 🛠️ Developer Tutorials & Practical Guides
+
+If you are an application developer building software with the Python or JavaScript/TypeScript SDKs, explore our comprehensive developer tutorials in the **[`tutorial/`](../tutorial/index.md)** directory:
+
+- 🚀 **[High-Level Quickstart (`Send` & `Receive`)](../tutorial/high_level_api.md)**: 1-line cryptographic operations across 14 polymorphic data types.
+- ⚙️ **[Low-Level Primitives](../tutorial/low_level_api.md)**: Direct usage of `Envelope`, `Identity`, and `Session`.
+- ⚡ **[Asynchronous Engine (`uxsp.aio`)](../tutorial/async_api.md)**: High-throughput async I/O pipelines.
+- 🎥 **[Live Media & WebRTC Streaming](../tutorial/streaming_and_media.md)**: Real-time encrypted video, voice, and CCTV feeds.
+- 🐍 **[Web Framework Integrations](../tutorial/frameworks/fastapi.md)**: Drop-in protection for **FastAPI**, **Django**, and **Flask**.
+- 🛡️ **[Replay Guard & NonceStores](../tutorial/noncestore.md)**: Memory, Redis, and Postgres durable replay guards.
+- 💻 **[Command-Line Interface (CLI)](../tutorial/cli.md)**: Keys, cards, trust anchors, and envelope diagnostics.
+- 🌐 **[Browser & Frontend SDK](../tutorial/web_frontend.md)**: JavaScript/TypeScript client library.
+
+---
+
+## 🔬 Protocol Architecture Summary
+
+```mermaid
+graph TD
+    subgraph Identity & Trust Anchor Layer
+        TA[Trust Anchor / Root CA] -->|Signs| SC[Signed PublicCard]
+        PC[PublicCard: X25519 + ML-KEM-768 + Ed25519 + ML-DSA-65]
+    end
+
+    subgraph Transport & Wire Envelopes
+        ENV[UXSP Sealed Envelope]
+        ENV -->|Binary Wire Format| BIN[UXSP/1 Binary Frame 0x55 0x58 0x53 0x50]
+        ENV -->|JSON Wire Format| JSN[application/uxsp+json Payload]
+    end
+
+    subgraph Cryptographic Core
+        KEM[ML-KEM-768 FIPS 203] + ECDH[X25519 Curve25519] --> HKDF[HKDF-SHA256 Master Key]
+        SIG[ML-DSA-65 FIPS 204] + EDS[Ed25519] --> DUAL[Dual-Layer Authentication]
+        HKDF --> AES[AES-256-GCM AEAD Encryption]
+    end
+
+    subgraph State Machines & Guards
+        HS[3-Step Handshake: HELLO -> ACK -> COMPLETE]
+        SESS[Session Manager: Directional Keys + Monotonic Seq]
+        NS[NonceStore: Redis / Postgres / Memory Replay Guard]
+    end
+
+    PC --> ENV
+    BIN --> AES
+    JSN --> AES
+    DUAL --> ENV
+    HS --> SESS
+    SESS --> NS
+```
+
+---
+
+## 📌 Document Versioning & Standards Compliance
+
+- **Current Protocol Version**: `UXSP-1` (`UXSP/1.2`)
+- **NIST Post-Quantum Standards**:
+  - **FIPS 203**: Module-Lattice-Based Key-Encapsulation Mechanism Standard (ML-KEM-768)
+  - **FIPS 204**: Module-Lattice-Based Digital Signature Standard (ML-DSA-65)
+- **Classical Baselines**:
+  - **RFC 7748**: Elliptic Curves for Security (X25519 ECDH)
+  - **RFC 8032**: Edwards-Curve Digital Signature Algorithm (Ed25519)
+  - **NIST SP 800-38D**: Recommendation for Block Cipher Modes of Operation: Galois/Counter Mode (AES-256-GCM)
+  - **RFC 5869**: HMAC-based Extract-and-Expand Key Derivation Function (HKDF-SHA256)
+  - **RFC 9106**: Argon2 Password Hashing Function (Argon2id)
