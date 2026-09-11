@@ -24,6 +24,7 @@ def SendFile(
     content_type: str | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
+    stream: bool | None = None,
 ) -> SecurePackage | Generator[SecurePackage, None, None]:
     if isinstance(file_path_or_bytes, (bytes, bytearray)):
         payload = UXSPPayload(
@@ -37,7 +38,8 @@ def SendFile(
         if not _safe_is_file(file_path_or_bytes):
             raise SecureSendError(f"File not found: {file_path_or_bytes}")
         p = Path(file_path_or_bytes)
-        if p.stat().st_size > 64 * 1024 * 1024:
+        should_stream = stream if stream is not None else (p.stat().st_size > 64 * 1024 * 1024)
+        if should_stream:
             from uxsp.secure._stream import SendStream
             return SendStream(  # type: ignore[return-value]
                 stream_or_path=p,
@@ -48,7 +50,7 @@ def SendFile(
                 data_type="file",
                 metadata=metadata,
             )
-        packed = pack_file(p, content_type=content_type)
+        packed = pack_file(p, content_type=content_type, max_bytes=1024 * 1024 * 1024)
     else:
         raise SecureSendError("file_path_or_bytes must be a path or bytes.")
 

@@ -6,6 +6,7 @@ All underlying complexities (PQC hybrid encryption, chunking, replay guards,
 and envelope serialization) are handled automatically behind 1-line functions.
 """
 
+from uxsp.core.identity import CardExpiredError, CardRevokedError
 from uxsp.secure._context import (
     _GLOBAL_CONTEXT as _GLOBAL_CONTEXT,
 )
@@ -30,6 +31,9 @@ from uxsp.secure._engine import (
     _secure_send_payload as _secure_send_payload,
 )
 from uxsp.secure._errors import (
+    DuplicateMessageError,
+    InvalidSenderError,
+    MessageExpiredError,
     PeerNotFoundError,
     SecureError,
     SecureReceiveError,
@@ -101,8 +105,13 @@ __all__ = [
     "SecureError",
     "SecureSendError",
     "SecureReceiveError",
+    "DuplicateMessageError",
+    "MessageExpiredError",
+    "InvalidSenderError",
     "PeerNotFoundError",
     "TypeMismatchError",
+    "CardExpiredError",
+    "CardRevokedError",
     "SecurePackage",
     "SecureContext",
     "configure",

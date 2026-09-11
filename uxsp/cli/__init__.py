@@ -145,6 +145,30 @@ def main() -> None:
     p_lv.add_argument("--peer", required=True, help="Path to peer .json public card")
     p_lv.set_defaults(func=live.live_voice)
 
+    # ── curl / fetch ──────────────────────────
+    from uxsp.cli import client as cli_client
+
+    def _add_client_args(p: argparse.ArgumentParser) -> None:
+        p.add_argument("url", help="Target URL (e.g. https://api.example.com/endpoint)")
+        p.add_argument("-X", "--method", "--request", dest="method", default="GET", help="HTTP method (GET, POST, PUT, DELETE, etc.)")
+        p.add_argument("-d", "--data", help="Request body string, or @filepath to read from file")
+        p.add_argument("-H", "--header", action="append", help="HTTP request header (key: value)")
+        p.add_argument("--sender", help="Path to sender .uxsp identity file")
+        p.add_argument("--peer", help="Peer ID or path to peer .json public card")
+        p.add_argument("-v", "--verbose", action="store_true", help="Print verbose negotiation and protocol details")
+        p.add_argument("-i", "--include", action="store_true", help="Include HTTP response headers in output")
+        p.add_argument("-o", "--out", help="Write response body to file instead of stdout")
+        p.add_argument("-k", "--insecure", action="store_true", help="Allow insecure TLS/SSL connections")
+        p.add_argument("--uxsp-only", action="store_true", help="Enforce UXSP encryption, fail if unsupported")
+        p.add_argument("--plain-only", action="store_true", help="Disable UXSP negotiation, send plain HTTP")
+        p.set_defaults(func=cli_client.cli_fetch)
+
+    p_curl = sub.add_parser("curl", help="Make an HTTP request with automatic UXSP negotiation (curl-like)")
+    _add_client_args(p_curl)
+
+    p_fetch = sub.add_parser("fetch", help="Make an HTTP request with automatic UXSP negotiation (alias for curl)")
+    _add_client_args(p_fetch)
+
     # ── version ──────────────────────────────
     p_v = sub.add_parser("version", help="Show uxsp version")
     p_v.set_defaults(func=_version)

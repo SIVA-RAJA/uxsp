@@ -5,11 +5,19 @@ from pathlib import Path
 from typing import Any
 
 from uxsp.core.chunking import create_chunked_transfer, reassemble_chunked_transfer
-from uxsp.core.envelope import Envelope
-from uxsp.core.identity import Identity, PublicCard
+from uxsp.core.envelope import Envelope, EnvelopeExpiredError
+from uxsp.core.identity import CardExpiredError, CardRevokedError, Identity, PublicCard
+from uxsp.core.replay import DuplicateNonceError, FutureEnvelopeError, StaleEnvelopeError
+from uxsp.crypto.hybrid import EnvelopeValidationError
 from uxsp.crypto.symmetric import decrypt, encrypt
 from uxsp.secure._context import _GLOBAL_CONTEXT
-from uxsp.secure._errors import SecureReceiveError, TypeMismatchError
+from uxsp.secure._errors import (
+    DuplicateMessageError,
+    InvalidSenderError,
+    MessageExpiredError,
+    SecureReceiveError,
+    TypeMismatchError,
+)
 from uxsp.secure._package import SecurePackage
 from uxsp.secure._utils import _normalize_id, _safe_is_file
 
@@ -161,35 +169,42 @@ def _secure_receive_payload(
             f"Data type mismatch: expected '{expected_type}', got '{package.data_type}'"
         )
 
-    if not package.is_chunked:
-        if package.envelope is None:
-            raise SecureReceiveError("Package is marked non-chunked but missing envelope.")
-        env = Envelope.from_dict(package.envelope)
-        payload_bytes = receiver_obj.open_from(env, peer_card, replay_guard=guard)
-        return payload_bytes
-    else:
-        if not package.chunks:
-            raise SecureReceiveError("Package is marked chunked but contains no chunks.")
-        if package.envelope is None:
-            raise SecureReceiveError("Package is marked chunked but missing session key envelope.")
+    try:
+        if not package.is_chunked:
+            if package.envelope is None:
+                raise SecureReceiveError("Package is marked non-chunked but missing envelope.")
+            env = Envelope.from_dict(package.envelope)
+            payload_bytes = receiver_obj.open_from(env, peer_card, replay_guard=guard)
+            return payload_bytes
+        else:
+            if not package.chunks:
+                raise SecureReceiveError("Package is marked chunked but contains no chunks.")
+            if package.envelope is None:
+                raise SecureReceiveError("Package is marked chunked but missing session key envelope.")
 
-        env = Envelope.from_dict(package.envelope)
-        session_key_bytes = receiver_obj.open_from(env, peer_card, replay_guard=guard)
-        session_key = bytearray(session_key_bytes)
-        try:
-            raw_chunks: list[bytes] = []
-            for seq, c_dict in enumerate(package.chunks):
-                ad = f"{env.envelope_nonce}:{seq}".encode()
-                ciphertext = bytes.fromhex(c_dict["c"])
-                nonce = bytes.fromhex(c_dict["n"])
-                c_bytes = decrypt(ciphertext, nonce, bytes(session_key), associated_data=ad)
-                raw_chunks.append(c_bytes)
+            env = Envelope.from_dict(package.envelope)
+            session_key_bytes = receiver_obj.open_from(env, peer_card, replay_guard=guard)
+            session_key = bytearray(session_key_bytes)
+            try:
+                raw_chunks: list[bytes] = []
+                for seq, c_dict in enumerate(package.chunks):
+                    ad = f"{env.envelope_nonce}:{seq}".encode()
+                    ciphertext = bytes.fromhex(c_dict["c"])
+                    nonce = bytes.fromhex(c_dict["n"])
+                    c_bytes = decrypt(ciphertext, nonce, bytes(session_key), associated_data=ad)
+                    raw_chunks.append(c_bytes)
 
-            _, reassembled = reassemble_chunked_transfer(raw_chunks)
-            return reassembled
-        finally:
-            for i in range(len(session_key)):
-                session_key[i] = 0
+                _, reassembled = reassemble_chunked_transfer(raw_chunks)
+                return reassembled
+            finally:
+                for i in range(len(session_key)):
+                    session_key[i] = 0
+    except DuplicateNonceError as exc:
+        raise DuplicateMessageError(f"Message already processed (duplicate). Nonce already used: {exc}") from exc
+    except (StaleEnvelopeError, FutureEnvelopeError, EnvelopeExpiredError) as exc:
+        raise MessageExpiredError(f"Message expired: {exc}") from exc
+    except (CardRevokedError, CardExpiredError, EnvelopeValidationError) as exc:
+        raise InvalidSenderError(f"Invalid sender: {exc}") from exc
 
 
 def _resolve_download_target(

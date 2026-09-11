@@ -38,7 +38,7 @@ PayloadKind = Literal["text", "file", "binary"]
 
 _MAGIC = b"UXSP-PAYLOAD-1"
 _HEADER_LEN_BYTES = 4
-MAX_PACK_FILE_BYTES = 64 * 1024 * 1024
+MAX_PACK_FILE_BYTES = 1024 * 1024 * 1024  # 1 GB
 
 
 class PayloadError(Exception):

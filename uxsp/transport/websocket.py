@@ -46,6 +46,7 @@ Key errors:
 from __future__ import annotations
 
 import json
+import os
 import time
 import warnings
 from typing import TYPE_CHECKING, Any
@@ -86,6 +87,8 @@ class FrameType(StrEnum):
         ERROR              — Protocol error notification.
         CLOSE              — Authenticated session teardown.
         PING / PONG        — Keepalive messages.
+        RESUME             — Initiator requests session resumption.
+        RESUME_ACK         — Responder confirms session resumption.
     """
     HANDSHAKE_HELLO = "UXSP-HELLO"
     HANDSHAKE_ACK = "UXSP-ACK"
@@ -95,6 +98,8 @@ class FrameType(StrEnum):
     CLOSE = "UXSP-CLOSE"
     PING = "UXSP-PING"
     PONG = "UXSP-PONG"
+    RESUME = "UXSP-RESUME"
+    RESUME_ACK = "UXSP-RESUME-ACK"
 
 
 # ─────────────────────────────────────────────
@@ -339,6 +344,49 @@ class UXSPWebSocket:
             FrameType.HANDSHAKE_COMPLETE, {"session_id": self._session.session_id}
         )
 
+    def start_resume(self) -> UXSPFrame:
+        """
+        Initiate session resumption on a reconnected WebSocket.
+        Builds a UXSP-RESUME frame authenticated with the session key.
+        """
+        if self._session is None or not self._session.is_active:
+            raise SessionNotEstablishedError("Cannot resume: no active session found.")
+        resume_nonce = os.urandom(16).hex()
+        last_seq = self._session.recv_seq
+        msg = f"RESUME:{self._session.session_id}:{last_seq}:{resume_nonce}".encode()
+        tag = self._session.compute_auth_tag(msg, direction="send")
+        return UXSPFrame.build(
+            FrameType.RESUME,
+            {
+                "session_id": self._session.session_id,
+                "last_seq": last_seq,
+                "nonce": resume_nonce,
+                "auth_tag": tag,
+            },
+        )
+
+    def complete_resume(self, ack_frame: UXSPFrame) -> None:
+        """
+        Complete session resumption on the initiator side after receiving UXSP-RESUME-ACK.
+        Verifies the responder's HMAC tag and synchronizes sequence state.
+        """
+        if self._session is None or not self._session.is_active:
+            raise SessionNotEstablishedError("Cannot complete resume: session is not active.")
+        if ack_frame.type != FrameType.RESUME_ACK:
+            raise UnexpectedFrameError(f"Expected UXSP-RESUME-ACK, got {ack_frame.type}")
+        payload = ack_frame.payload
+        sid = payload.get("session_id")
+        if sid != self._session.session_id:
+            raise UXSPWebSocketError(
+                f"RESUME_ACK session_id '{sid}' does not match session '{self._session.session_id}'"
+            )
+        last_seq = payload.get("last_seq", 0)
+        nonce = payload.get("nonce", "")
+        auth_tag = payload.get("auth_tag", "")
+        msg = f"RESUME_ACK:{self._session.session_id}:{last_seq}:{nonce}".encode()
+        if not self._session.verify_auth_tag(msg, auth_tag, direction="recv"):
+            raise UXSPWebSocketError("Invalid resume ack authentication tag: verification failed.")
+
     # ─────────────────────────────────────────
     # RESPONDER METHODS
     # ─────────────────────────────────────────
@@ -407,6 +455,46 @@ class UXSPWebSocket:
                 f"does not match handshake session '{expected_sid}'."
             )
         self._session = self._hs.session
+
+    def handle_resume(
+        self, resume_frame: UXSPFrame, session: Session | None = None
+    ) -> UXSPFrame:
+        """
+        Process a UXSP-RESUME frame as the responder.
+        Verifies initiator's HMAC tag and produces a UXSP-RESUME-ACK frame.
+        """
+        if resume_frame.type != FrameType.RESUME:
+            raise UnexpectedFrameError(f"Expected UXSP-RESUME, got {resume_frame.type}")
+        sess = session or self._session
+        if sess is None or not sess.is_active:
+            raise SessionNotEstablishedError("Cannot resume: session not found or expired.")
+
+        payload = resume_frame.payload
+        sid = payload.get("session_id")
+        if sid != sess.session_id:
+            raise UXSPWebSocketError(f"Session ID mismatch: expected {sess.session_id}, got {sid}")
+
+        last_seq = payload.get("last_seq", 0)
+        nonce = payload.get("nonce", "")
+        auth_tag = payload.get("auth_tag", "")
+        msg = f"RESUME:{sess.session_id}:{last_seq}:{nonce}".encode()
+        if not sess.verify_auth_tag(msg, auth_tag, direction="recv"):
+            raise UXSPWebSocketError("Invalid resume authentication tag: verification failed.")
+
+        self._session = sess
+        resp_nonce = os.urandom(16).hex()
+        resp_last_seq = sess.recv_seq
+        resp_msg = f"RESUME_ACK:{sess.session_id}:{resp_last_seq}:{resp_nonce}".encode()
+        resp_tag = sess.compute_auth_tag(resp_msg, direction="send")
+        return UXSPFrame.build(
+            FrameType.RESUME_ACK,
+            {
+                "session_id": sess.session_id,
+                "last_seq": resp_last_seq,
+                "nonce": resp_nonce,
+                "auth_tag": resp_tag,
+            },
+        )
 
     # ─────────────────────────────────────────
     # DATA FRAMES

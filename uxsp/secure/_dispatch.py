@@ -144,13 +144,20 @@ def Receive(
     sender_card: PublicCard | Identity | None = None,
     receiver: Identity | None = None,
     receiver_identity: Identity | None = None,
+    recipient: Identity | None = None,
 ) -> Any:
     """
     Polymorphic receiver: automatically detects data_type from the secure package
     and dispatches to the matching Receive* handler.
     """
+    if package is None and (
+        isinstance(sender_id, (SecurePackage, dict, bytes, bytearray))
+        or (isinstance(sender_id, str) and (sender_id.startswith("{") or _safe_is_file(sender_id)))
+    ):
+        package = sender_id
+        sender_id = None
     snd = sender_card if sender_card is not None else (sender if sender is not None else sender_id)
-    rec = receiver if receiver is not None else receiver_identity
+    rec = receiver if receiver is not None else (receiver_identity if receiver_identity is not None else recipient)
     pkg = _resolve_package_input(package)
     dt = pkg.data_type.lower()
 

@@ -31,14 +31,46 @@ export class UXSPClient {
 
   /**
    * Create an encrypted SecurePackage from plaintext data.
+   * Automatically splits into verified UXSPChunks if data exceeds threshold.
    */
   static async createEncryptedPackage(
     sender: Identity,
     recipientCard: PublicCard,
     plaintext: Uint8Array,
     dataType: string = "TEXT",
-    metadata: Record<string, unknown> = {}
+    metadata: Record<string, unknown> = {},
+    options?: { autoChunk?: boolean; chunkThreshold?: number; chunkSize?: number }
   ): Promise<SecurePackage> {
+    const threshold = options?.chunkThreshold ?? (64 * 1024);
+    const shouldChunk = (options?.autoChunk && plaintext.length > threshold) || (options?.chunkSize !== undefined && plaintext.length > options.chunkSize);
+
+    if (shouldChunk) {
+      const { createChunkedTransfer } = await import("./chunking.js");
+      const chunks = await createChunkedTransfer(plaintext, {
+        chunkSize: options?.chunkSize ?? threshold,
+        kind: dataType.toLowerCase() === "text" ? "text" : "binary",
+      });
+
+      const chunkEnvelopes = [];
+      for (const ch of chunks) {
+        const env = await seal(sender, recipientCard, ch.toBytes());
+        chunkEnvelopes.push(env);
+      }
+
+      return this.createPackage({
+        sender_id: sender.entity_id,
+        receiver_id: recipientCard.entity_id,
+        data_type: dataType,
+        chunks: chunkEnvelopes,
+        metadata: {
+          ...metadata,
+          uxsp_chunked_transfer: true,
+          total_chunks: chunks.length,
+          total_bytes: plaintext.length,
+        },
+      });
+    }
+
     const envelope = await seal(sender, recipientCard, plaintext);
     return this.createPackage({
       sender_id: sender.entity_id,
@@ -50,7 +82,7 @@ export class UXSPClient {
   }
 
   /**
-   * Decrypt a SecurePackage using the receiver's identity.
+   * Decrypt a SecurePackage using the receiver's identity, reassembling chunks if needed.
    */
   static async openEncryptedPackage(
     receiver: Identity,
@@ -61,16 +93,39 @@ export class UXSPClient {
       if (!pkg.chunks || pkg.chunks.length === 0) {
         throw new Error("Package is marked as chunked but contains no chunks.");
       }
-      const decryptedChunks: Uint8Array[] = [];
-      let totalLength = 0;
+      const decryptedSlices: Uint8Array[] = [];
       for (const chunkEnvelope of pkg.chunks) {
         const decrypted = await openSeal(receiver, senderCard, chunkEnvelope);
-        decryptedChunks.push(decrypted);
-        totalLength += decrypted.length;
+        decryptedSlices.push(decrypted);
+      }
+
+      // Check if slices are UXSP-CHUNK-1 wire format
+      if (
+        decryptedSlices[0].length >= 16 &&
+        decryptedSlices[0][0] === 0x55 && // 'U'
+        decryptedSlices[0][1] === 0x58 && // 'X'
+        decryptedSlices[0][2] === 0x53 && // 'S'
+        decryptedSlices[0][3] === 0x50    // 'P'
+      ) {
+        try {
+          const { UXSPChunk, reassembleChunkedTransfer } = await import("./chunking.js");
+          const parsedChunks = [];
+          for (const s of decryptedSlices) {
+            parsedChunks.push(await UXSPChunk.fromBytes(s));
+          }
+          return await reassembleChunkedTransfer(parsedChunks);
+        } catch {
+          // Fall back to plain concatenation if not valid UXSP-CHUNK-1
+        }
+      }
+
+      let totalLength = 0;
+      for (const chunk of decryptedSlices) {
+        totalLength += chunk.length;
       }
       const result = new Uint8Array(totalLength);
       let offset = 0;
-      for (const chunk of decryptedChunks) {
+      for (const chunk of decryptedSlices) {
         result.set(chunk, offset);
         offset += chunk.length;
       }

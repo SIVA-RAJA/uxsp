@@ -43,6 +43,10 @@ env.bak/
 venv.bak/
 .python-version
 
+# Rust / Native Extensions
+target/
+Cargo.lock
+
 # Testing & Coverage
 htmlcov/
 .tox/
@@ -50,6 +54,7 @@ htmlcov/
 .coverage
 .coverage.*
 .cache
+.hypothesis/
 nosetests.xml
 coverage.xml
 *.cover
@@ -102,6 +107,9 @@ sdks/js/tests/**/*.d.ts.map
 *.pfx
 *.uxsp
 *.keys
+*.card.json
+*.cert.json
+*.crl.json
 local_keys/
 
 # Database files

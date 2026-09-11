@@ -35,6 +35,8 @@ Key errors:
     SessionNotActiveError — Operation requires ACTIVE state.
     SessionReorderError  — Message arrived out of order or was replayed.
 """
+import hashlib
+import hmac
 import threading
 import time
 from dataclasses import dataclass
@@ -442,6 +444,35 @@ class Session:
         with self._lock:
             self._evaluate_expiry_unlocked()
             return self._state == SessionState.ACTIVE
+
+    @property
+    def send_seq(self) -> int:
+        """Current outgoing sequence number."""
+        with self._lock:
+            return self._send_seq
+
+    @property
+    def recv_seq(self) -> int:
+        """Current incoming sequence number."""
+        with self._lock:
+            return self._recv_seq
+
+    def compute_auth_tag(self, message: bytes, direction: str = "send") -> str:
+        """
+        Compute HMAC-SHA256 authentication tag over message using session directional key.
+        Direction 'send' uses send_key; 'recv' uses recv_key.
+        """
+        with self._lock:
+            key = bytes(self._send_key) if direction == "send" else bytes(self._recv_key)
+        return hmac.new(key, message, hashlib.sha256).hexdigest()
+
+    def verify_auth_tag(self, message: bytes, tag: str, direction: str = "recv") -> bool:
+        """
+        Verify HMAC-SHA256 authentication tag over message using session directional key.
+        Direction 'recv' verifies against recv_key (default for incoming tags).
+        """
+        expected = self.compute_auth_tag(message, direction=direction)
+        return hmac.compare_digest(expected, tag)
 
     @property
     def message_count(self) -> int:

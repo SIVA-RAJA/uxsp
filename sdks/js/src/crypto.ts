@@ -1,7 +1,7 @@
 /**
  * Web Crypto API Wrappers for UXSP
  */
-import { encodeBase64, decodeBase64 } from "./utils.js";
+import { encodeBase64, decodeBase64, encodeHex } from "./utils.js";
 
 // Basic wrappers for X25519 and Ed25519 (Requires modern browser Web Crypto)
 // Note: Depending on TS version, we may need to cast algorithm names.
@@ -231,3 +231,62 @@ export async function verifyEd25519(
     data as any
   );
 }
+
+/**
+ * Compute HMAC-SHA256 signature over data.
+ */
+export async function hmacSha256(
+  key: Uint8Array,
+  data: Uint8Array
+): Promise<Uint8Array> {
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    key as any,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", cryptoKey, data as any);
+  return new Uint8Array(signature);
+}
+
+/**
+ * Compute SHA-256 digest of data.
+ */
+export async function sha256(data: Uint8Array): Promise<Uint8Array> {
+  const digest = await crypto.subtle.digest("SHA-256", data as any);
+  return new Uint8Array(digest);
+}
+
+/**
+ * Compute SHA-256 hex digest of data.
+ */
+export async function sha256Hex(data: Uint8Array): Promise<string> {
+  const digest = await sha256(data);
+  return encodeHex(digest);
+}
+
+/**
+ * Constant-time byte / string equality check to prevent timing attacks.
+ */
+export function constantTimeEqual(
+  a: Uint8Array | string,
+  b: Uint8Array | string
+): boolean {
+  const bytesA = typeof a === "string" ? new TextEncoder().encode(a) : a;
+  const bytesB = typeof b === "string" ? new TextEncoder().encode(b) : b;
+  if (bytesA.length !== bytesB.length) return false;
+  let diff = 0;
+  for (let i = 0; i < bytesA.length; i++) {
+    diff |= bytesA[i] ^ bytesB[i];
+  }
+  return diff === 0;
+}
+
+/**
+ * Overwrite sensitive memory buffers with zeroes.
+ */
+export function zeroize(buf: Uint8Array): void {
+  buf.fill(0);
+}
+

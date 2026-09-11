@@ -24,6 +24,7 @@ def _send_file_type(
     data_type: str,
     default_filename: str,
     default_content_type: str,
+    stream: bool | None = None,
     receiver: str | int | PublicCard | Identity | None = None,
     sender: Identity | None = None,
     sender_identity: Identity | None = None,
@@ -35,7 +36,8 @@ def _send_file_type(
         if not _safe_is_file(file_path_or_bytes):
             raise SecureSendError(f"File not found: {file_path_or_bytes}")
         p = Path(file_path_or_bytes)
-        if p.stat().st_size > 64 * 1024 * 1024:
+        should_stream = stream if stream is not None else (p.stat().st_size > 64 * 1024 * 1024)
+        if should_stream:
             from uxsp.secure._stream import SendStream
             return SendStream(  # type: ignore[return-value]
                 receiver_id=receiver_id,
@@ -48,7 +50,7 @@ def _send_file_type(
             )
         fname = filename or p.name or default_filename
         ctype, _ = mimetypes.guess_type(str(p))
-        packed = pack_file(p, content_type=ctype or default_content_type)
+        packed = pack_file(p, content_type=ctype or default_content_type, max_bytes=1024 * 1024 * 1024)
     elif isinstance(file_path_or_bytes, (bytes, bytearray)):
         fname = filename or default_filename
         packed = pack_binary(file_path_or_bytes, filename=fname, content_type=default_content_type)

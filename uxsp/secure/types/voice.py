@@ -27,6 +27,7 @@ def SendVoice(
     duration_seconds: float | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
+    stream: bool | None = None,
 ) -> SecurePackage | Generator[SecurePackage, None, None]:
     """Encrypt and send a voice note/message to receiver."""
     meta = metadata or {}
@@ -37,7 +38,8 @@ def SendVoice(
         if not _safe_is_file(voice_path_or_bytes):
             raise SecureSendError(f"File not found: {voice_path_or_bytes}")
         p = Path(voice_path_or_bytes)
-        if p.stat().st_size > 64 * 1024 * 1024:
+        should_stream = stream if stream is not None else (p.stat().st_size > 64 * 1024 * 1024)
+        if should_stream:
             return SendStream(  # type: ignore[return-value]
                 receiver_id=receiver_id,
                 stream_or_path=p,
@@ -47,7 +49,7 @@ def SendVoice(
                 data_type="voice",
                 metadata=metadata,
             )
-        packed = pack_file(p, content_type="audio/ogg")
+        packed = pack_file(p, content_type="audio/ogg", max_bytes=1024 * 1024 * 1024)
     elif isinstance(voice_path_or_bytes, (bytes, bytearray)):
         packed = pack_binary(voice_path_or_bytes, filename="voice.ogg", content_type="audio/ogg")
     else:

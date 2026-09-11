@@ -1,5 +1,5 @@
-from __future__ import annotations
-
+import asyncio
+import inspect
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -11,7 +11,18 @@ from uxsp.core.replay import ReplayGuard
 from uxsp.secure._errors import PeerNotFoundError
 from uxsp.secure._package import SecurePackage
 from uxsp.secure._utils import _normalize_id
-from uxsp.storage.keystore import KeyStore, MemoryKeyStore
+from uxsp.storage.keystore import AsyncKeyStore, KeyStore, MemoryKeyStore
+
+
+def _safe_put_card(keystore: Any, card: Any, overwrite: bool = True) -> None:
+    res = keystore.put(card, overwrite=overwrite)
+    if inspect.isawaitable(res):
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(res)
+        except RuntimeError:
+            if inspect.iscoroutine(res):
+                res.close()
 
 
 class SecureContext:
@@ -22,7 +33,7 @@ class SecureContext:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._identity: Identity | None = None
-        self._keystore: KeyStore = MemoryKeyStore()
+        self._keystore: KeyStore | AsyncKeyStore = MemoryKeyStore()
         self._noncestore: NonceStore = MemoryNonceStore()
         self._replay_guard: ReplayGuard = ReplayGuard(self._noncestore)
         self._default_output_dir: Path = Path.cwd() / "downloads"
@@ -32,7 +43,7 @@ class SecureContext:
         self,
         *,
         identity: Identity | None = None,
-        keystore: KeyStore | None = None,
+        keystore: KeyStore | AsyncKeyStore | None = None,
         noncestore: NonceStore | None = None,
         replay_guard: ReplayGuard | None = None,
         default_output_dir: str | Path | None = None,
@@ -42,11 +53,11 @@ class SecureContext:
         with self._lock:
             if identity is not None:
                 self._identity = identity
-                self._keystore.put(identity.public_card())
+                _safe_put_card(self._keystore, identity.public_card())
             if keystore is not None:
                 self._keystore = keystore
                 if self._identity is not None:
-                    self._keystore.put(self._identity.public_card())
+                    _safe_put_card(self._keystore, self._identity.public_card())
             if noncestore is not None:
                 self._noncestore = noncestore
                 self._replay_guard = ReplayGuard(noncestore)
@@ -62,14 +73,14 @@ class SecureContext:
         with self._lock:
             if self._identity is None:
                 self._identity = Identity.create(name="DefaultUser", role="client")
-                self._keystore.put(self._identity.public_card())
+                _safe_put_card(self._keystore, self._identity.public_card())
             return self._identity
 
     def set_identity(self, identity: Identity) -> None:
         """Set the active local identity."""
         with self._lock:
             self._identity = identity
-            self._keystore.put(identity.public_card())
+            _safe_put_card(self._keystore, identity.public_card())
 
     def register_peer(self, peer_card_or_identity: PublicCard | Identity) -> None:
         """Register a peer's public card."""
@@ -78,7 +89,7 @@ class SecureContext:
                 card = peer_card_or_identity.public_card()
             else:
                 card = peer_card_or_identity
-            self._keystore.put(card)
+            _safe_put_card(self._keystore, card)
 
     def get_peer(self, entity_id: str | int | PublicCard | Identity) -> PublicCard:
         """Retrieve a registered peer's PublicCard."""

@@ -19,6 +19,7 @@ def SendDocument(
     filename: str | None = None,
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
+    stream: bool | None = None,
 ) -> SecurePackage | Generator[SecurePackage, None, None]:
     return _send_file_type(
         receiver_id=receiver_id,
@@ -32,6 +33,7 @@ def SendDocument(
         filename=filename,
         output_file=output_file,
         metadata=metadata,
+        stream=stream,
     )
 
 def ReceiveDocument(

@@ -225,6 +225,9 @@ from uxsp.transport.websocket import (
 # ─────────────────────────────────────────────
 from uxsp import secure
 from uxsp.secure import (
+    DuplicateMessageError,
+    InvalidSenderError,
+    MessageExpiredError,
     PeerNotFoundError,
     Receive,
     ReceiveArchive,
@@ -279,6 +282,8 @@ from uxsp.secure import (
     ReceiveVoiceCall,
     TypeMismatchError,
     create_identity,
+    configure,
+    get_context,
     set_identity,
     get_identity,
     register_peer,
@@ -293,8 +298,13 @@ from uxsp.secure import (
     verify_password,
 )
 
-from uxsp import schema
+from uxsp import client, schema
 from uxsp.aio import stream as async_stream
+from uxsp.client import (
+    UXSPClient,
+    fetch,
+    request,
+)
 
 # ─────────────────────────────────────────────
 # __all__ — what `from uxsp import *` exports
@@ -318,9 +328,14 @@ __all__ = [
     "import_identity_encrypted",
     "SecurePackage",
     "SecureContext",
+    "configure",
+    "get_context",
     "SecureError",
     "SecureSendError",
     "SecureReceiveError",
+    "DuplicateMessageError",
+    "MessageExpiredError",
+    "InvalidSenderError",
     "PeerNotFoundError",
     "TypeMismatchError",
     "SendVideo",
@@ -493,6 +508,11 @@ __all__ = [
     "argon2id_hash",
     "argon2id_needs_rehash",
     "argon2id_verify",
+    # client
+    "client",
+    "UXSPClient",
+    "fetch",
+    "request",
     # meta
     "__version__",
     "aio",

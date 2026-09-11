@@ -41,3 +41,20 @@ export function decodeHex(hex: string): Uint8Array {
   }
   return bytes;
 }
+
+/**
+ * Bind binary fields with 32-bit big-endian length prefixes (matching Python bind_fields).
+ */
+export function bindFields(...fields: Uint8Array[]): Uint8Array {
+  let totalLen = 0;
+  for (const f of fields) totalLen += 4 + f.length;
+  const result = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const f of fields) {
+    new DataView(result.buffer).setUint32(offset, f.length, false); // big-endian
+    result.set(f, offset + 4);
+    offset += 4 + f.length;
+  }
+  return result;
+}
+

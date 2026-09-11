@@ -8,40 +8,289 @@ ASGI frameworks (FastAPI, Starlette, Quart) and WebSocket connections.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any
 
 import uxsp.secure as sync_secure
 from uxsp.aio._types import async_receive_file_type, async_send_file_type
-from uxsp.core.identity import Identity, PublicCard
+from uxsp.core.identity import CardExpiredError, CardRevokedError, Identity, PublicCard
+from uxsp.core.replay import ReplayGuard
+from uxsp.secure._context import _GLOBAL_CONTEXT, SecureContext
+from uxsp.secure._errors import (
+    DuplicateMessageError,
+    InvalidSenderError,
+    MessageExpiredError,
+    PeerNotFoundError,
+    SecureError,
+    SecureReceiveError,
+    SecureSendError,
+    TypeMismatchError,
+)
+from uxsp.secure._package import SecurePackage
+from uxsp.secure._utils import _normalize_id
+from uxsp.storage.keystore import AsyncKeyStore
 
-# ── 1. GLOBAL CONTEXT & IDENTITY (Async Wrappers) ───────────
+# ── 1. ASYNC SECURE CONTEXT & CONFIGURATION ─────────────────
+
+class _ConfigResult:
+    """Awaitable and immediate configuration result for sync/async usage."""
+
+    def __init__(self, async_coro: Any = None) -> None:
+        self._async_coro = async_coro
+
+    def __await__(self) -> Generator[Any, None, None]:
+        async def _wrapper() -> None:
+            if self._async_coro is not None:
+                await self._async_coro
+        return _wrapper().__await__()
+
+    def __repr__(self) -> str:
+        return "<ConfigResult configured>"
+
+
+class AsyncSecureContext(SecureContext):
+    """
+    Asynchronous context managing local identities, peer public keys,
+    replay guards, and defaults for async workflows.
+    """
+    def __init__(self, sync_context: SecureContext | None = None) -> None:
+        self._sync_context = sync_context or SecureContext()
+        super().__init__()
+
+    def __await__(self) -> Generator[Any, None, AsyncSecureContext]:
+        async def _ret() -> AsyncSecureContext:
+            return self
+        return _ret().__await__()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._sync_context, name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "_sync_context":
+            super().__setattr__(name, value)
+        else:
+            setattr(self._sync_context, name, value)
+
+    @property
+    def identity(self) -> Identity | None:
+        return self._sync_context._identity
+
+    @property
+    def keystore(self) -> Any:
+        return self._sync_context._keystore
+
+    @property
+    def noncestore(self) -> Any:
+        return self._sync_context._noncestore
+
+    @property
+    def replay_guard(self) -> ReplayGuard:
+        return self._sync_context.get_replay_guard()
+
+    @property
+    def default_output_dir(self) -> Path:
+        return self._sync_context.get_default_output_dir()
+
+    @property
+    def transport_hook(self) -> Any:
+        return self._sync_context._transport_hook
+
+    def configure(
+        self,
+        *,
+        identity: Identity | None = None,
+        keystore: Any = None,
+        noncestore: Any = None,
+        replay_guard: Any = None,
+        default_output_dir: str | Path | None = None,
+        transport_hook: Callable[[SecurePackage], Any] | None = None,
+    ) -> _ConfigResult:
+        """Configure runtime defaults immediately (callable synchronously or with await)."""
+        self._sync_context.configure(
+            identity=identity,
+            keystore=keystore,
+            noncestore=noncestore,
+            replay_guard=replay_guard,
+            default_output_dir=default_output_dir,
+            transport_hook=transport_hook,
+        )
+
+        coro = None
+        if isinstance(self._sync_context._keystore, AsyncKeyStore) and self._sync_context._identity is not None:
+            async def _async_step() -> None:
+                await self._sync_context._keystore.put(self._sync_context._identity.public_card())
+
+            coro = _async_step()
+            try:
+                loop = asyncio.get_running_loop()
+                if loop.is_running():
+                    loop.create_task(self._sync_context._keystore.put(self._sync_context._identity.public_card()))
+            except RuntimeError:
+                pass
+
+        return _ConfigResult(coro)
+
+    async def get_identity(self) -> Identity:
+        """Asynchronously get or create default identity."""
+        ident = self._sync_context.get_identity()
+        if isinstance(self._sync_context._keystore, AsyncKeyStore):
+            await self._sync_context._keystore.put(ident.public_card())
+        return ident
+
+    async def set_identity(self, identity: Identity) -> None:
+        """Asynchronously set active local identity."""
+        self._sync_context.set_identity(identity)
+        if isinstance(self._sync_context._keystore, AsyncKeyStore):
+            await self._sync_context._keystore.put(identity.public_card())
+
+    async def register_peer(self, peer_card_or_identity: PublicCard | Identity) -> None:
+        """Asynchronously register a peer's public card."""
+        if isinstance(self._sync_context._keystore, AsyncKeyStore):
+            card = peer_card_or_identity.public_card() if isinstance(peer_card_or_identity, Identity) else peer_card_or_identity
+            await self._sync_context._keystore.put(card)
+        else:
+            self._sync_context.register_peer(peer_card_or_identity)
+
+    async def get_peer(self, entity_id: str | int | PublicCard | Identity) -> PublicCard:
+        """Asynchronously retrieve a registered peer's PublicCard."""
+        if isinstance(self._sync_context._keystore, AsyncKeyStore):
+            eid = _normalize_id(entity_id)
+            card = await self._sync_context._keystore.get(eid)
+            if card is None:
+                raise PeerNotFoundError(
+                    f"No public card registered for peer '{eid}'. "
+                    f"Register peer using uxsp.aio.register_peer(card) first."
+                )
+            if isinstance(card, PublicCard):
+                return card
+            return card.card
+        return self._sync_context.get_peer(entity_id)
+
+    async def revoke_peer(self, peer: str | int | PublicCard | Identity, reason: str = "Key compromised") -> PublicCard:
+        """Asynchronously mark a registered peer's PublicCard as revoked."""
+        if isinstance(self._sync_context._keystore, AsyncKeyStore):
+            card = await self.get_peer(peer)
+            card.revoke(reason=reason)
+            await self._sync_context._keystore.put(card, overwrite=True)
+            return card
+        return self._sync_context.revoke_peer(peer, reason=reason)
+
+    def get_replay_guard(self) -> ReplayGuard:
+        return self._sync_context.get_replay_guard()
+
+    def get_default_output_dir(self) -> Path:
+        return self._sync_context.get_default_output_dir()
+
+    def dispatch_package(self, package: SecurePackage) -> Any:
+        return self._sync_context.dispatch_package(package)
+
+    async def reset(self) -> None:
+        self._sync_context.reset()
+
+
+_GLOBAL_ASYNC_CONTEXT = AsyncSecureContext(_GLOBAL_CONTEXT)
+
+
+def configure(
+    *,
+    identity: Identity | None = None,
+    keystore: Any = None,
+    noncestore: Any = None,
+    replay_guard: Any = None,
+    default_output_dir: str | Path | None = None,
+    transport_hook: Callable[[SecurePackage], Any] | None = None,
+) -> _ConfigResult:
+    """Configure runtime defaults for the async secure context (callable synchronously or with await)."""
+    return _GLOBAL_ASYNC_CONTEXT.configure(
+        identity=identity,
+        keystore=keystore,
+        noncestore=noncestore,
+        replay_guard=replay_guard,
+        default_output_dir=default_output_dir,
+        transport_hook=transport_hook,
+    )
+
+
+def get_context() -> AsyncSecureContext:
+    """Return the global async secure context (callable synchronously or with await)."""
+    return _GLOBAL_ASYNC_CONTEXT
+
 
 async def set_identity(identity: Identity) -> None:
-    return await asyncio.to_thread(sync_secure.set_identity, identity)
+    await _GLOBAL_ASYNC_CONTEXT.set_identity(identity)
+
 
 async def get_identity() -> Identity:
-    return await asyncio.to_thread(sync_secure.get_identity)
+    return await _GLOBAL_ASYNC_CONTEXT.get_identity()
+
 
 async def register_peer(peer_card_or_identity: PublicCard | Identity) -> None:
-    return await asyncio.to_thread(sync_secure.register_peer, peer_card_or_identity)
+    await _GLOBAL_ASYNC_CONTEXT.register_peer(peer_card_or_identity)
+
 
 async def get_peer(entity_id: str | int | PublicCard | Identity) -> PublicCard:
-    return await asyncio.to_thread(sync_secure.get_peer, entity_id)
+    return await _GLOBAL_ASYNC_CONTEXT.get_peer(entity_id)
+
 
 async def reset_context() -> None:
-    return await asyncio.to_thread(sync_secure.reset_context)
+    await _GLOBAL_ASYNC_CONTEXT.reset()
+
 
 async def rotate_keys(identity: Identity | None = None) -> Identity:
-    return await asyncio.to_thread(sync_secure.rotate_keys, identity)
+    if identity is None:
+        ident = await _GLOBAL_ASYNC_CONTEXT.get_identity()
+        await asyncio.to_thread(ident.rotate_keys)
+        await _GLOBAL_ASYNC_CONTEXT.set_identity(ident)
+        return ident
+    return await asyncio.to_thread(identity.rotate_keys)
+
 
 async def revoke_peer(peer: str | int | PublicCard | Identity, reason: str = "Key compromised") -> PublicCard:
-    return await asyncio.to_thread(sync_secure.revoke_peer, peer, reason)
+    return await _GLOBAL_ASYNC_CONTEXT.revoke_peer(peer, reason=reason)
+
 
 async def verify_peer_validity(peer: str | int | PublicCard | Identity) -> None:
-    return await asyncio.to_thread(sync_secure.verify_peer_validity, peer)
+    try:
+        card = await get_peer(peer)
+    except PeerNotFoundError:
+        if isinstance(peer, PublicCard):
+            card = peer
+        elif isinstance(peer, Identity):
+            card = peer.public_card()
+        else:
+            raise
+    card.verify_validity()
 
-# ── 2. DATA TYPE DISPATCHERS ───────────────────────────────
+
+# ── 2. IDENTITY & PASSWORD HELPERS (Non-blocking Threadpool) ──
+
+async def create_identity(name: str, role: str = "CLIENT") -> Identity:
+    """Asynchronously create a brand-new Identity with a freshly generated hybrid keypair."""
+    return await asyncio.to_thread(Identity.create, name=name, role=role)
+
+
+async def hash_password(password: str) -> str:
+    """Asynchronously hash a password using Argon2id (CPU-heavy, executed in threadpool)."""
+    return await asyncio.to_thread(Identity.hash_password, password)
+
+
+async def verify_password(stored_hash: str, password: str) -> bool:
+    """Asynchronously verify a password against an Argon2id PHC string hash in threadpool."""
+    return await asyncio.to_thread(Identity.verify_password, stored_hash, password)
+
+
+async def export_identity_encrypted(identity: Identity, password: str) -> str:
+    """Asynchronously export an Identity to an encrypted JSON string protected by password."""
+    return await asyncio.to_thread(identity.to_encrypted_json, password)
+
+
+async def import_identity_encrypted(encrypted_json: str | bytes, password: str) -> Identity:
+    """Asynchronously import an Identity from an encrypted JSON string protected by password."""
+    return await asyncio.to_thread(Identity.from_encrypted_json, encrypted_json, password)
+
+
+# ── 3. DATA TYPE DISPATCHERS ───────────────────────────────
 
 def _remap_kwargs(kwargs, old_key, new_key="file_path_or_bytes"):  # type: ignore[no-untyped-def]
     if old_key in kwargs:
@@ -240,15 +489,24 @@ async def Receive(
     sender_card: PublicCard | Identity | None = None,
     receiver: Identity | None = None,
     receiver_identity: Identity | None = None,
+    recipient: Identity | None = None,
 ) -> Any:
     """
     Async polymorphic receiver: automatically detects data_type from the secure package
     and dispatches to the matching async Receive* handler.
     """
     from uxsp.secure._engine import _resolve_package_input
+    from uxsp.secure._utils import _safe_is_file
+
+    if package is None and (
+        isinstance(sender_id, (SecurePackage, dict, bytes, bytearray))
+        or (isinstance(sender_id, str) and (sender_id.startswith("{") or _safe_is_file(sender_id)))
+    ):
+        package = sender_id
+        sender_id = None
 
     snd = sender_card if sender_card is not None else (sender if sender is not None else sender_id)
-    rec = receiver if receiver is not None else receiver_identity
+    rec = receiver if receiver is not None else (receiver_identity if receiver_identity is not None else recipient)
     pkg = _resolve_package_input(package)
     dt = pkg.data_type.lower()
 
@@ -305,3 +563,83 @@ SendLiveVoice = SendLiveVoiceCall
 ReceiveLiveVoice = ReceiveLiveVoiceCall
 SendVoiceCall = SendLiveVoiceCall
 ReceiveVoiceCall = ReceiveLiveVoiceCall
+
+__all__ = [
+    # Classes & Context
+    "SecurePackage",
+    "SecureContext",
+    "AsyncSecureContext",
+    "configure",
+    "get_context",
+    "set_identity",
+    "get_identity",
+    "register_peer",
+    "get_peer",
+    "reset_context",
+    "rotate_keys",
+    "revoke_peer",
+    "verify_peer_validity",
+    # Identity & Password Helpers
+    "create_identity",
+    "hash_password",
+    "verify_password",
+    "export_identity_encrypted",
+    "import_identity_encrypted",
+    # Errors
+    "SecureError",
+    "SecureSendError",
+    "SecureReceiveError",
+    "DuplicateMessageError",
+    "MessageExpiredError",
+    "InvalidSenderError",
+    "PeerNotFoundError",
+    "TypeMismatchError",
+    "CardExpiredError",
+    "CardRevokedError",
+    # Async Dispatchers
+    "SendVideo",
+    "ReceiveVideo",
+    "SendAudio",
+    "ReceiveAudio",
+    "SendPhoto",
+    "ReceivePhoto",
+    "SendImage",
+    "ReceiveImage",
+    "SendText",
+    "ReceiveText",
+    "SendDocument",
+    "ReceiveDocument",
+    "SendDoc",
+    "ReceiveDoc",
+    "SendPDF",
+    "ReceivePDF",
+    "SendFile",
+    "ReceiveFile",
+    "SendBinary",
+    "ReceiveBinary",
+    "SendJSON",
+    "ReceiveJSON",
+    "SendHTML",
+    "ReceiveHTML",
+    "SendArchive",
+    "ReceiveArchive",
+    "SendZip",
+    "ReceiveZip",
+    "SendVoice",
+    "ReceiveVoice",
+    "SendLocation",
+    "ReceiveLocation",
+    "SendContact",
+    "ReceiveContact",
+    "Send",
+    "Receive",
+    "SendLiveSession",
+    "ReceiveLiveSession",
+    "SendLiveVoiceCall",
+    "ReceiveLiveVoiceCall",
+    "SendLiveVoice",
+    "ReceiveLiveVoice",
+    "SendVoiceCall",
+    "ReceiveVoiceCall",
+]
+
