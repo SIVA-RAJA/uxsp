@@ -1071,4 +1071,70 @@ async def test_async_lookup_keystore_global_fallback():
     assert found.entity_id == ident.entity_id
 
 
+@pytest.mark.asyncio
+async def test_async_lookup_keystore_exception(monkeypatch):
+    client = AsyncUXSPClient(keystore=None)
+    import uxsp.aio.secure as aio_sec
+
+    async def mock_fail(entity_id):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(aio_sec, "get_peer", mock_fail)
+    found = await client._lookup_keystore("some_id")
+    assert found is None
+
+
+def test_sync_client_no_httpx(monkeypatch):
+    import builtins
+    import importlib
+    import sys
+
+    orig_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name in ("httpx", "httpx2"):
+            raise ImportError("no httpx")
+        return orig_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    sys.modules.pop("uxsp.client._sync_client", None)
+    sync_mod = importlib.import_module("uxsp.client._sync_client")
+    try:
+        assert sync_mod.httpx is None
+        c = sync_mod.UXSPClient()
+        assert c._http_client is None
+        assert c._owns_client is False
+    finally:
+        monkeypatch.undo()
+        sys.modules.pop("uxsp.client._sync_client", None)
+        importlib.import_module("uxsp.client._sync_client")
+
+
+def test_async_client_no_httpx(monkeypatch):
+    import builtins
+    import importlib
+    import sys
+
+    orig_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name in ("httpx", "httpx2"):
+            raise ImportError("no httpx")
+        return orig_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    sys.modules.pop("uxsp.client._async_client", None)
+    async_mod = importlib.import_module("uxsp.client._async_client")
+    try:
+        assert async_mod.httpx is None
+        c = async_mod.AsyncUXSPClient()
+        assert c._http_client is None
+        assert c._owns_client is False
+    finally:
+        monkeypatch.undo()
+        sys.modules.pop("uxsp.client._async_client", None)
+        importlib.import_module("uxsp.client._async_client")
+
+
+
 

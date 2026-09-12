@@ -142,7 +142,9 @@ class AsyncUXSPClient:
             if inspect.isawaitable(res):
                 res = await res
             if res is not None:
-                return res.card if hasattr(res, "card") else res
+                res_card = res.card if hasattr(res, "card") else res
+                if isinstance(res_card, PublicCard):
+                    return res_card
             return None
 
         try:
@@ -384,7 +386,7 @@ class AsyncUXSPClient:
             try:
                 raw_text = body.decode("utf-8").strip()
                 pkg_resp = SecurePackage.from_json(raw_text)
-                decrypted_data = await Receive(pkg_resp, sender=recipient_card, receiver=sender_ident)
+                decrypted_data = await Receive(package=pkg_resp, sender=recipient_card, receiver=sender_ident)
                 return UXSPResponse(
                     status_code=status,
                     headers=resp_headers,

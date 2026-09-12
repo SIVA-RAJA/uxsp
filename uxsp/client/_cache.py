@@ -81,7 +81,7 @@ class HostCapabilityCache(ABC):
         """Retrieve capability for host_key asynchronously."""
         res = self.get(host_key)
         if inspect.isawaitable(res):
-            return await res  # type: ignore[no-any-return]
+            return await res
         return res
 
     async def aset(self, host_key: str, capability: HostCapability) -> None:

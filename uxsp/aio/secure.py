@@ -96,7 +96,7 @@ class AsyncSecureContext(SecureContext):
     def transport_hook(self) -> Any:
         return self._sync_context._transport_hook
 
-    def configure(
+    def configure(  # type: ignore[override]
         self,
         *,
         identity: Identity | None = None,
@@ -117,34 +117,38 @@ class AsyncSecureContext(SecureContext):
         )
 
         coro = None
-        if isinstance(self._sync_context._keystore, AsyncKeyStore) and self._sync_context._identity is not None:
+        ks = self._sync_context._keystore
+        ident = self._sync_context._identity
+        if isinstance(ks, AsyncKeyStore) and ident is not None:
+            card = ident.public_card()
+
             async def _async_step() -> None:
-                await self._sync_context._keystore.put(self._sync_context._identity.public_card())
+                await ks.put(card)
 
             coro = _async_step()
             try:
                 loop = asyncio.get_running_loop()
                 if loop.is_running():
-                    loop.create_task(self._sync_context._keystore.put(self._sync_context._identity.public_card()))
+                    loop.create_task(ks.put(card))
             except RuntimeError:
                 pass
 
         return _ConfigResult(coro)
 
-    async def get_identity(self) -> Identity:
+    async def get_identity(self) -> Identity:  # type: ignore[override]
         """Asynchronously get or create default identity."""
         ident = self._sync_context.get_identity()
         if isinstance(self._sync_context._keystore, AsyncKeyStore):
             await self._sync_context._keystore.put(ident.public_card())
         return ident
 
-    async def set_identity(self, identity: Identity) -> None:
+    async def set_identity(self, identity: Identity) -> None:  # type: ignore[override]
         """Asynchronously set active local identity."""
         self._sync_context.set_identity(identity)
         if isinstance(self._sync_context._keystore, AsyncKeyStore):
             await self._sync_context._keystore.put(identity.public_card())
 
-    async def register_peer(self, peer_card_or_identity: PublicCard | Identity) -> None:
+    async def register_peer(self, peer_card_or_identity: PublicCard | Identity) -> None:  # type: ignore[override]
         """Asynchronously register a peer's public card."""
         if isinstance(self._sync_context._keystore, AsyncKeyStore):
             card = peer_card_or_identity.public_card() if isinstance(peer_card_or_identity, Identity) else peer_card_or_identity
@@ -152,7 +156,7 @@ class AsyncSecureContext(SecureContext):
         else:
             self._sync_context.register_peer(peer_card_or_identity)
 
-    async def get_peer(self, entity_id: str | int | PublicCard | Identity) -> PublicCard:
+    async def get_peer(self, entity_id: str | int | PublicCard | Identity) -> PublicCard:  # type: ignore[override]
         """Asynchronously retrieve a registered peer's PublicCard."""
         if isinstance(self._sync_context._keystore, AsyncKeyStore):
             eid = _normalize_id(entity_id)
@@ -167,7 +171,7 @@ class AsyncSecureContext(SecureContext):
             return card.card
         return self._sync_context.get_peer(entity_id)
 
-    async def revoke_peer(self, peer: str | int | PublicCard | Identity, reason: str = "Key compromised") -> PublicCard:
+    async def revoke_peer(self, peer: str | int | PublicCard | Identity, reason: str = "Key compromised") -> PublicCard:  # type: ignore[override]
         """Asynchronously mark a registered peer's PublicCard as revoked."""
         if isinstance(self._sync_context._keystore, AsyncKeyStore):
             card = await self.get_peer(peer)
@@ -185,7 +189,7 @@ class AsyncSecureContext(SecureContext):
     def dispatch_package(self, package: SecurePackage) -> Any:
         return self._sync_context.dispatch_package(package)
 
-    async def reset(self) -> None:
+    async def reset(self) -> None:  # type: ignore[override]
         self._sync_context.reset()
 
 
@@ -427,8 +431,10 @@ async def Send(
             return await SendContact(receiver=rec, contact_data=item, sender=snd, output_file=output_file, metadata=metadata)
         if dt == "location":
             if isinstance(item, dict):
-                lat = float(item.get("latitude", item.get("lat", 0.0)))
-                lon = float(item.get("longitude", item.get("lon", 0.0)))
+                lat_raw = item.get("latitude") if item.get("latitude") is not None else item.get("lat", 0.0)
+                lon_raw = item.get("longitude") if item.get("longitude") is not None else item.get("lon", 0.0)
+                lat = float(lat_raw) if lat_raw is not None else 0.0
+                lon = float(lon_raw) if lon_raw is not None else 0.0
                 desc = item.get("description")
             elif isinstance(item, (list, tuple)) and len(item) >= 2:
                 lat, lon = float(item[0]), float(item[1])

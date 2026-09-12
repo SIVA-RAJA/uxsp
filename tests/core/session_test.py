@@ -860,3 +860,8 @@ class TestEdgeCases:
         with pytest.raises(SessionError):
             resp.decrypt(payload)
         assert resp._recv_count == 0    # must stay 0, not go negative
+
+    def test_send_seq_property(self):
+        s = make_session()
+        assert s.send_seq == 0
+        assert s.recv_seq == 0

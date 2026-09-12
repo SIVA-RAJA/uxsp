@@ -8,6 +8,7 @@ from uxsp.core.chunking import create_chunked_transfer, reassemble_chunked_trans
 from uxsp.core.envelope import Envelope, EnvelopeExpiredError
 from uxsp.core.identity import CardExpiredError, CardRevokedError, Identity, PublicCard
 from uxsp.core.replay import DuplicateNonceError, FutureEnvelopeError, StaleEnvelopeError
+from uxsp.core.signing import SignedCard
 from uxsp.crypto.hybrid import EnvelopeValidationError
 from uxsp.crypto.symmetric import decrypt, encrypt
 from uxsp.secure._context import _GLOBAL_CONTEXT
@@ -28,15 +29,18 @@ from uxsp.storage.keystore import AsyncKeyStore
 async def async_secure_send_payload(
     receiver_id: str | int | PublicCard | Identity | None = None,
     payload_bytes: bytes = b"",
-    data_type: str = "file",
     *,
-    sender_identity: Identity | None = None,
-    sender: Identity | None = None,
-    receiver: str | int | PublicCard | Identity | None = None,
+    data_type: str = "binary",
     output_file: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
+    receiver: str | int | PublicCard | Identity | None = None,
+    sender: Identity | None = None,
+    sender_identity: Identity | None = None,
 ) -> SecurePackage:
-    rec_target = receiver if receiver is not None else receiver_id
+    """
+    Asynchronously encrypt and package a raw payload byte string using UXSP.
+    """
+    rec_target = receiver or receiver_id
     if rec_target is None:
         raise ValueError("Receiver identity or receiver_id must be provided.")
 
@@ -50,7 +54,8 @@ async def async_secure_send_payload(
         rec_id = _normalize_id(rec_target)
         # If the keystore is async, we await it; else we use the sync get_peer
         if isinstance(_GLOBAL_CONTEXT._keystore, AsyncKeyStore):
-            peer_card = await _GLOBAL_CONTEXT._keystore.require(rec_id)
+            card = await _GLOBAL_CONTEXT._keystore.require(rec_id)
+            peer_card = card.card if isinstance(card, SignedCard) else card
         else:
             peer_card = _GLOBAL_CONTEXT.get_peer(rec_id)
 
@@ -177,7 +182,8 @@ async def async_secure_receive_payload(
     else:
         snd_id = _normalize_id(snd_target)
         if isinstance(_GLOBAL_CONTEXT._keystore, AsyncKeyStore):
-            peer_card = await _GLOBAL_CONTEXT._keystore.require(snd_id)
+            card = await _GLOBAL_CONTEXT._keystore.require(snd_id)
+            peer_card = card.card if isinstance(card, SignedCard) else card
         else:
             peer_card = _GLOBAL_CONTEXT.get_peer(snd_id)
 

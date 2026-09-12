@@ -3,6 +3,8 @@ Tests for UXSP WebSocket Session Resumption.
 """
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from uxsp.core.identity import Identity
@@ -24,7 +26,7 @@ class TestWebSocketSessionResumption:
         bob_card = bob.public_card()
 
         ws_alice = UXSPWebSocket.as_initiator(alice, bob_card)
-        ws_bob = UXSPWebSocket.as_responder(bob)
+        ws_bob = UXSPWebSocket.as_responder(bob, limiter=MagicMock())
 
         hello = ws_alice.start_handshake()
         ack = ws_bob.handle_hello(hello, alice_card)
@@ -124,3 +126,30 @@ class TestWebSocketSessionResumption:
         # handle_resume with non-RESUME frame
         with pytest.raises(UnexpectedFrameError):
             ws_bob.handle_resume(wrong_frame)
+
+    def test_complete_resume_inactive_or_mismatch(self):
+        ws_alice, ws_bob, _, _ = self._create_established_pair()
+        resume_frame = ws_alice.start_resume()
+        resume_ack = ws_bob.handle_resume(resume_frame)
+
+        # Test session ID mismatch in complete_resume (line 380)
+        mismatched_ack_payload = dict(resume_ack.payload)
+        mismatched_ack_payload["session_id"] = "wrong-session-id"
+        mismatched_ack = UXSPFrame.build(FrameType.RESUME_ACK, mismatched_ack_payload)
+        with pytest.raises(UXSPWebSocketError, match="RESUME_ACK session_id 'wrong-session-id' does not match"):
+            ws_alice.complete_resume(mismatched_ack)
+
+        # Test inactive session in complete_resume (line 374)
+        ws_alice.session.revoke()
+        with pytest.raises(SessionNotEstablishedError, match="Cannot complete resume: session is not active"):
+            ws_alice.complete_resume(resume_ack)
+
+    def test_handle_resume_session_not_active(self):
+        ws_alice, ws_bob, _, _ = self._create_established_pair()
+        resume_frame = ws_alice.start_resume()
+
+        # Test inactive session in handle_resume (line 470)
+        ws_bob.session.revoke()
+        with pytest.raises(SessionNotEstablishedError, match="Cannot resume: session not found or expired"):
+            ws_bob.handle_resume(resume_frame)
+

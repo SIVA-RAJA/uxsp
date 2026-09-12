@@ -4,7 +4,7 @@ import asyncio
 import mimetypes
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from uxsp.aio._engine import async_secure_receive_payload, async_secure_send_payload
 from uxsp.core.identity import Identity, PublicCard
@@ -37,7 +37,7 @@ async def async_send_file_type(
         should_stream = stream if stream is not None else (p.stat().st_size > 64 * 1024 * 1024)
         if should_stream:
             from uxsp.aio.stream import SendStream
-            return await SendStream(
+            res = await SendStream(
                 stream_or_path=p,
                 receiver_id=receiver_id,
                 receiver=receiver,
@@ -46,6 +46,7 @@ async def async_send_file_type(
                 data_type=data_type,
                 metadata=metadata,
             )
+            return cast(AsyncIterator[SecurePackage], res)
         fname = filename or p.name or default_filename
         ctype, _ = mimetypes.guess_type(str(p))
         packed = await asyncio.to_thread(

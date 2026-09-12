@@ -3,7 +3,7 @@ Tests for uxsp curl / uxsp fetch CLI functionality.
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
@@ -149,3 +149,125 @@ class TestClientCLI:
             assert exc_info.value.code == 1
             captured = capsys.readouterr()
             assert "Request failed: Network down" in captured.err
+
+    def test_cli_curl_data_file_not_found(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            "sys.argv",
+            ["uxsp", "curl", "https://api.example.com", "-d", "@nonexistent_file_123.txt"],
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "Error: Data file not found:" in captured.err
+
+    def test_cli_curl_sender_file_not_found(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            "sys.argv",
+            ["uxsp", "curl", "https://api.example.com", "--sender", "nonexistent_sender_123.uxsp"],
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "Error: Sender key file not found:" in captured.err
+
+    def test_cli_curl_sender_prompt_password(self, monkeypatch, tmp_path):
+        sender = Identity.create("Alice", "CLIENT")
+        sender_file = tmp_path / "alice.uxsp"
+        sender.save(sender_file, "prompt_pwd")
+
+        mock_response = UXSPResponse(
+            status_code=200,
+            headers={},
+            content=b"ok",
+            url="https://api.example.com/status",
+            is_uxsp=False,
+        )
+
+        with patch("uxsp.cli.client.prompt_password", return_value="prompt_pwd") as mock_prompt:
+            with patch("uxsp.client.UXSPClient.request", return_value=mock_response):
+                monkeypatch.delenv("UXSP_PASSWORD", raising=False)
+                monkeypatch.setattr(
+                    "sys.argv",
+                    ["uxsp", "curl", "https://api.example.com/status", "--sender", str(sender_file)],
+                )
+                main()
+                mock_prompt.assert_called_once()
+
+    def test_cli_curl_peer_invalid_card_and_peer_as_string(self, monkeypatch, tmp_path, capsys):
+        # Invalid JSON card file
+        bad_card = tmp_path / "bad.card.json"
+        bad_card.write_text("invalid json {", encoding="utf-8")
+
+        monkeypatch.setattr(
+            "sys.argv",
+            ["uxsp", "curl", "https://api.example.com", "--peer", str(bad_card)],
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "Error loading peer card from" in captured.err
+
+        # Peer as string entity ID
+        mock_response = UXSPResponse(
+            status_code=200,
+            headers={},
+            content=b"ok",
+            url="https://api.example.com/status",
+            is_uxsp=False,
+        )
+        with patch("uxsp.client.UXSPClient.request", return_value=mock_response) as mock_req:
+            monkeypatch.setattr(
+                "sys.argv",
+                ["uxsp", "curl", "https://api.example.com/status", "--peer", "custom_peer_id"],
+            )
+            main()
+            mock_req.assert_called_once()
+            _, kwargs = mock_req.call_args
+            assert kwargs["peer"] == "custom_peer_id"
+
+    def test_cli_curl_verbose_force_uxsp_and_plain_only(self, monkeypatch, capsys):
+        mock_response = UXSPResponse(
+            status_code=200,
+            headers={},
+            content=b"ok",
+            url="https://api.example.com/status",
+            is_uxsp=False,
+        )
+
+        # Verbose with --uxsp-only
+        with patch("uxsp.client.UXSPClient.request", return_value=mock_response):
+            monkeypatch.setattr(
+                "sys.argv",
+                ["uxsp", "curl", "https://api.example.com/status", "-v", "--uxsp-only"],
+            )
+            main()
+            captured = capsys.readouterr()
+            assert "* Enforcing UXSP encryption (force_uxsp=True)" in captured.err
+
+        # Verbose with --plain-only
+        with patch("uxsp.client.UXSPClient.request", return_value=mock_response):
+            monkeypatch.setattr(
+                "sys.argv",
+                ["uxsp", "curl", "https://api.example.com/status", "-v", "--plain-only"],
+            )
+            main()
+            captured = capsys.readouterr()
+            assert "* Plain HTTP mode (UXSP negotiation disabled)" in captured.err
+
+    def test_cli_curl_stdout_binary_fallback(self, monkeypatch):
+        mock_response = MagicMock(spec=UXSPResponse)
+        mock_response.status_code = 200
+        mock_response.headers = {}
+        mock_response.content = b"\xff\xfe\x00\x80"
+        type(mock_response).text = PropertyMock(side_effect=UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid"))
+        mock_response.is_uxsp = False
+
+        with patch("uxsp.client.UXSPClient.request", return_value=mock_response):
+            with patch("sys.stdout.buffer.write") as mock_buf_write:
+                monkeypatch.setattr("sys.argv", ["uxsp", "curl", "https://api.example.com/bin"])
+                main()
+                mock_buf_write.assert_called_with(b"\xff\xfe\x00\x80")
+

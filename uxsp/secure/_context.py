@@ -1,7 +1,6 @@
 import asyncio
-import inspect
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any
 
@@ -16,13 +15,12 @@ from uxsp.storage.keystore import AsyncKeyStore, KeyStore, MemoryKeyStore
 
 def _safe_put_card(keystore: Any, card: Any, overwrite: bool = True) -> None:
     res = keystore.put(card, overwrite=overwrite)
-    if inspect.isawaitable(res):
+    if isinstance(res, Coroutine):
         try:
             loop = asyncio.get_running_loop()
             loop.create_task(res)
         except RuntimeError:
-            if inspect.iscoroutine(res):
-                res.close()
+            res.close()
 
 
 class SecureContext:
@@ -103,7 +101,7 @@ class SecureContext:
                 )
             if isinstance(card, PublicCard):
                 return card
-            return card.card
+            return card.card  # type: ignore[union-attr]
 
     def revoke_peer(self, peer: str | int | PublicCard | Identity, reason: str = "Key compromised") -> PublicCard:
         """Mark a registered peer's PublicCard as revoked."""

@@ -234,3 +234,31 @@ async def test_engine_sync_keystore_string_ids():
     _GLOBAL_CONTEXT._keystore.put(sender.public_card())
     dec = await async_secure_receive_payload(sender_id=sender.entity_id, package_input=pkg)
     assert dec == b"sync_test"
+
+
+@pytest.mark.asyncio
+async def test_async_engine_receive_exceptions_mapping():
+    from unittest.mock import patch
+
+    from uxsp.core.envelope import EnvelopeExpiredError
+    from uxsp.core.replay import DuplicateNonceError
+    from uxsp.crypto.hybrid import EnvelopeValidationError
+    from uxsp.secure._errors import DuplicateMessageError, InvalidSenderError, MessageExpiredError
+
+    sender = Identity.create("test", "USER")
+    receiver = Identity.create("test", "USER")
+    _GLOBAL_CONTEXT.set_identity(receiver)
+    pkg = await async_secure_send_payload(receiver=receiver, payload_bytes=b"hello", sender=sender)
+
+    with patch.object(receiver, "open_from", side_effect=DuplicateNonceError("dup")):
+        with pytest.raises(DuplicateMessageError, match="Message already processed"):
+            await async_secure_receive_payload(sender=sender, package_input=pkg)
+
+    with patch.object(receiver, "open_from", side_effect=EnvelopeExpiredError("expired")):
+        with pytest.raises(MessageExpiredError, match="Message expired"):
+            await async_secure_receive_payload(sender=sender, package_input=pkg)
+
+    with patch.object(receiver, "open_from", side_effect=EnvelopeValidationError("invalid")):
+        with pytest.raises(InvalidSenderError, match="Invalid sender"):
+            await async_secure_receive_payload(sender=sender, package_input=pkg)
+

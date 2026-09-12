@@ -161,7 +161,9 @@ class TestModuleInit:
             kem_algorithms=["Kyber768"],
             sig_algorithms=["Dilithium3"],
         )
-        mod = _reimport_pqc(fake)
+        with pytest.warns(UserWarning) as records:
+            mod = _reimport_pqc(fake)
+        assert len(records) == 2
         assert mod._KEM_ALGORITHM == "Kyber768"
         assert mod._SIG_ALGORITHM == "Dilithium3"
 

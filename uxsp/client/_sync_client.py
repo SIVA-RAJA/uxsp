@@ -120,7 +120,9 @@ class UXSPClient:
             if ks is not None:
                 card = ks.get(peer_id)
                 if card is not None:
-                    return card.card if hasattr(card, "card") else card
+                    res_card = card.card if hasattr(card, "card") else card
+                    if isinstance(res_card, PublicCard):
+                        return res_card
 
         # Check host_key in peer_registry
         if host_key in self.peer_registry:
@@ -134,7 +136,9 @@ class UXSPClient:
             if ks is not None:
                 card = ks.get(cap.peer_id)
                 if card is not None:
-                    return card.card if hasattr(card, "card") else card
+                    res_card = card.card if hasattr(card, "card") else card
+                    if isinstance(res_card, PublicCard):
+                        return res_card
 
         return None
 
@@ -372,7 +376,7 @@ class UXSPClient:
             try:
                 raw_text = body.decode("utf-8").strip()
                 pkg_resp = SecurePackage.from_json(raw_text)
-                decrypted_data = Receive(pkg_resp, sender=recipient_card, receiver=sender_ident)
+                decrypted_data = Receive(package=pkg_resp, sender=recipient_card, receiver=sender_ident)
                 return UXSPResponse(
                     status_code=status,
                     headers=resp_headers,

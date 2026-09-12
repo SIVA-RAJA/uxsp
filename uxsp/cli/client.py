@@ -32,14 +32,16 @@ def cli_fetch(args: argparse.Namespace) -> None:
     # Parse data / payload
     data: bytes | str | None = None
     if args.data is not None:
-        data = args.data
-        if data.startswith("@"):
+        raw_data: str = args.data
+        if raw_data.startswith("@"):
             # Load from file if prefixed with @
-            file_path = Path(data[1:])
+            file_path = Path(raw_data[1:])
             if not file_path.exists():
                 print(f"Error: Data file not found: {file_path}", file=sys.stderr)
                 sys.exit(1)
             data = file_path.read_bytes()
+        else:
+            data = raw_data
 
     # Load sender identity if specified
     sender_ident: Identity | None = None
@@ -51,7 +53,7 @@ def cli_fetch(args: argparse.Namespace) -> None:
         pwd = os.environ.get("UXSP_PASSWORD")
         if not pwd:
             pwd = prompt_password("Sender key password: ")
-        sender_ident = Identity.load(sender_path, pwd)
+        sender_ident = Identity.load(str(sender_path), pwd)
 
     # Load peer card if specified
     peer: str | PublicCard | None = None

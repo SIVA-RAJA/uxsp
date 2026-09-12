@@ -527,3 +527,25 @@ async def test_async_live_voice_call(alice_identity, bob_identity):
     assert dec == frame
     assert meta["codec"] == "opus"
 
+
+def test_async_secure_config_result_repr_and_no_loop():
+    from uxsp.aio.secure import _ConfigResult, configure
+    from uxsp.storage.keystore import AsyncKeyStore
+
+    res = _ConfigResult(None)
+    assert repr(res) == "<ConfigResult configured>"
+
+    class DummyAsyncKeyStore(AsyncKeyStore):
+        async def put(self, card, overwrite=True): pass
+        async def get(self, entity_id): return None
+        async def delete(self, entity_id): return True
+        async def list_ids(self): return []
+
+    ident = uxsp.create_identity("NoLoopIdent")
+    c_res = configure(identity=ident, keystore=DummyAsyncKeyStore())
+    assert repr(c_res) == "<ConfigResult configured>"
+    if c_res._async_coro is not None:
+        c_res._async_coro.close()
+
+
+
