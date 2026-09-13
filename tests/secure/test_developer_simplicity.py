@@ -58,15 +58,16 @@ def test_send_file_large_returns_secure_package_when_not_streaming(tmp_path: Pat
     test_file = tmp_path / "large_mock.bin"
     test_file.write_bytes(b"A" * 1024)
 
-    # Mock st_size > 64MB
+    # Mock st_size > 64MB using real os.stat_result
+    import os
     orig_stat = Path.stat
 
     def mock_stat(self, *args, **kwargs):
         st = orig_stat(self, *args, **kwargs)
         if self == test_file:
-            mock = MagicMock(wraps=st)
-            mock.st_size = 70 * 1024 * 1024  # 70 MB
-            return mock
+            vals = list(st)
+            vals[6] = 70 * 1024 * 1024  # 70 MB
+            return os.stat_result(vals)
         return st
 
     with patch.object(Path, "stat", mock_stat):

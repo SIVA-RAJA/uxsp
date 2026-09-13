@@ -947,9 +947,12 @@ async def test_redis_cache_bytes_decode():
 
 def test_sync_client_close_and_fallback_on_error(monkeypatch):
     client = UXSPClient()
-    assert client._owns_client is True
-    client.close()
-    assert client._http_client is None
+    if httpx is not None:
+        assert client._owns_client is True
+        client.close()
+        assert client._http_client is None
+    else:
+        assert client._owns_client is False
 
     # Test fallback when _send_uxsp raises Exception
     alice = Identity.create("Alice", "CLIENT")
@@ -971,9 +974,12 @@ def test_sync_client_close_and_fallback_on_error(monkeypatch):
 @pytest.mark.asyncio
 async def test_async_client_aclose_and_fallback_on_error(monkeypatch):
     client = AsyncUXSPClient()
-    assert client._owns_client is True
-    await client.aclose()
-    assert client._http_client is None
+    if httpx is not None:
+        assert client._owns_client is True
+        await client.aclose()
+        assert client._http_client is None
+    else:
+        assert client._owns_client is False
 
     # Test fallback when async _send_uxsp raises Exception
     alice = await aio.create_identity("AsyncAlice")
@@ -1026,6 +1032,9 @@ async def test_async_lookup_keystore_with_async_keystore():
 
 
 def test_raw_send_httpx_branch():
+    if httpx is None or not hasattr(httpx, "MockTransport"):
+        pytest.skip("httpx with MockTransport required")
+
     def handler(request):
         return httpx.Response(200, headers={"Content-Type": "application/json"}, text="httpx_ok")
 
