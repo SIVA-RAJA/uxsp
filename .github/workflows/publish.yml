@@ -23,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install ".[dev,postgres,redis]"
+          pip install -e ".[all,dev]"
 
       - name: Run Ruff Linter
         run: |
@@ -86,7 +86,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install ".[dev,postgres,redis]"
+          pip install -e ".[all,dev]"
 
       - name: Run Test Suite (pytest)
         run: |
