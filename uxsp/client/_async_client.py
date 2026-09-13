@@ -28,13 +28,12 @@ from uxsp.transport.http import (
     HEADER_SEC_UXSP_SUPPORT,
 )
 
+httpx: Any = None
 try:
-    import httpx2 as httpx
-except ImportError:
-    try:
-        import httpx  # type: ignore[no-redef]
-    except ImportError:
-        httpx = None  # type: ignore[assignment]
+    import httpx2
+    httpx = httpx2
+except Exception:
+    httpx = None
 
 
 class AsyncUXSPClient:

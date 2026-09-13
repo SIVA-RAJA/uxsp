@@ -7,10 +7,12 @@ import json
 import time
 from typing import Any
 
-import fakeredis
+try:
+    import fakeredis
+except ImportError:
+    fakeredis = None
+
 import pytest
-from starlette.requests import Request
-from starlette.responses import JSONResponse
 
 import uxsp.aio as aio
 from uxsp.client import (
@@ -25,7 +27,6 @@ from uxsp.client import (
     UXSPResponse,
     normalize_host_key,
 )
-from uxsp.contrib.fastapi import UXSPFastAPIMiddleware
 from uxsp.core.identity import Identity
 from uxsp.secure import SecurePackage
 from uxsp.transport.http import (
@@ -35,11 +36,8 @@ from uxsp.transport.http import (
 
 try:
     import httpx2 as httpx
-except ImportError:
-    try:
-        import httpx
-    except ImportError:
-        httpx = None
+except Exception:
+    httpx = None
 
 
 # ─────────────────────────────────────────────
@@ -121,6 +119,8 @@ async def test_in_memory_cache_async_methods():
 
 
 def test_redis_host_capability_cache_sync():
+    if fakeredis is None:
+        pytest.skip("fakeredis not installed")
     r = fakeredis.FakeRedis()
     cache = RedisHostCapabilityCache(r, prefix="test_uxsp:")
     key = "redis.test:443"
@@ -140,6 +140,8 @@ def test_redis_host_capability_cache_sync():
 
 @pytest.mark.asyncio
 async def test_redis_host_capability_cache_async():
+    if fakeredis is None:
+        pytest.skip("fakeredis not installed")
     r = fakeredis.FakeAsyncRedis()
     cache = RedisHostCapabilityCache(r, prefix="test_uxsp_async:")
     key = "async.redis.test:443"
@@ -474,8 +476,16 @@ async def test_async_client_force_uxsp_errors():
 
 @pytest.mark.asyncio
 async def test_fastapi_middleware_automatic_fallback_and_uxsp():
+    pytest.importorskip("starlette")
+    pytest.importorskip("fastapi")
+    if httpx is None or not hasattr(httpx, "ASGITransport"):
+        pytest.skip("httpx with ASGITransport required")
+
     from starlette.applications import Starlette
+    from starlette.requests import Request
+    from starlette.responses import JSONResponse
     from starlette.routing import Route
+    from uxsp.contrib.fastapi import UXSPFastAPIMiddleware
 
     server_ident = await aio.create_identity("ServerAPI")
     client_ident = await aio.create_identity("ClientApp")
@@ -783,6 +793,8 @@ async def test_async_decryption_failure_handling():
 
 
 def test_redis_cache_sync_call_on_async_client_errors():
+    if fakeredis is None:
+        pytest.skip("fakeredis not installed")
     r = fakeredis.FakeAsyncRedis()
     cache = RedisHostCapabilityCache(r)
 
