@@ -4,6 +4,9 @@
 
 | Version | Supported |
 |---------|-----------|
+| 1.3.x   | ✅ Yes — current stable release |
+| 1.2.x   | ✅ Yes — receives security fixes |
+| 1.1.x   | ✅ Yes — receives security fixes |
 | 1.0.x   | ✅ Yes — receives security fixes |
 | < 1.0.0 | ❌ No |
 
@@ -168,4 +171,4 @@ researchers acting within this policy.
 
 ---
 
-*Last updated: 2026 — UXSP v1.2.0*
+*Last updated: 2026 — UXSP v1.3.0*

@@ -30,7 +30,7 @@ class TestInitPackageNotFound:
             orig = sys.modules.pop("uxsp", None)
             try:
                 import uxsp as u
-                assert u.__version__ == "1.2.0"
+                assert u.__version__ == "1.3.0"
             finally:
                 if orig is not None:
                     sys.modules["uxsp"] = orig

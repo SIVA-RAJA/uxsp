@@ -1,6 +1,6 @@
 {
   "name": "@siva_raja/uxsp",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "type": "module",
   "description": "UXSP JavaScript/TypeScript Browser SDK",
   "main": "dist/index.js",

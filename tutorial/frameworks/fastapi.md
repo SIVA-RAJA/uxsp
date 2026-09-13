@@ -70,3 +70,13 @@ async def secure_endpoint(request: Request):
     # on the way out and encrypt it before it leaves the server!
     return {"status": "success", "received": data}
 ```
+
+---
+
+## 4. Automatic Protocol Negotiation & Client Compatibility
+
+When paired with `UXSPClient`, `AsyncUXSPClient`, or browser `uxspFetch`, `UXSPFastAPIMiddleware` participates in automatic negotiation:
+- **Capability Advertising**: The middleware checks incoming requests for `X-UXSP-Accept` and includes `X-UXSP-Version: 1.0, 1.3` and `X-UXSP-Identity` headers in responses.
+- **Opportunistic Fallback**: When `require_encryption=False`, standard HTTP clients (e.g. mobile apps, webhooks, or Swagger UI) communicate in normal JSON without errors.
+- **Strict Routes**: Applying `@protect()` on sensitive routes guarantees that only clients performing end-to-end post-quantum encryption can reach that handler.
+

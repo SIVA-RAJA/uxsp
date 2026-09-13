@@ -22,6 +22,8 @@ For security architects, cryptographers, compliance auditors, and engineers impl
 If you are an application developer building software with the Python or JavaScript/TypeScript SDKs, explore our comprehensive developer tutorials in the **[`tutorial/`](../tutorial/index.md)** directory:
 
 - 🚀 **[High-Level Quickstart (`Send` & `Receive`)](../tutorial/high_level_api.md)**: 1-line cryptographic operations across 14 polymorphic data types.
+- 🌐 **[End-to-End Fullstack Integration](../tutorial/fullstack_integration.md)**: Connect React/Next.js frontend with FastAPI/Django/Flask backend with zero-trust encryption.
+- 🔄 **[Autonomous HTTP Client & Protocol Switching](../tutorial/client.md)**: In-depth guide on `UXSPClient`, fallback mechanisms, and capability caching.
 - ⚙️ **[Low-Level Primitives](../tutorial/low_level_api.md)**: Direct usage of `Envelope`, `Identity`, and `Session`.
 - ⚡ **[Asynchronous Engine (`uxsp.aio`)](../tutorial/async_api.md)**: High-throughput async I/O pipelines.
 - 🎥 **[Live Media & WebRTC Streaming](../tutorial/streaming_and_media.md)**: Real-time encrypted video, voice, and CCTV feeds.
@@ -71,7 +73,7 @@ graph TD
 
 ## 📌 Document Versioning & Standards Compliance
 
-- **Current Protocol Version**: `UXSP-1` (`UXSP/1.2`)
+- **Current Protocol Version**: `UXSP-1` (`UXSP/1.3`, UXSP v1.3.0)
 - **NIST Post-Quantum Standards**:
   - **FIPS 203**: Module-Lattice-Based Key-Encapsulation Mechanism Standard (ML-KEM-768)
   - **FIPS 204**: Module-Lattice-Based Digital Signature Standard (ML-DSA-65)

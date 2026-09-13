@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name            = "uxsp"
-version         = "1.2.0"
+version         = "1.3.0"
 description     = "Universal Exchange Security Protocol — Hybrid Post-Quantum Secure Messaging"
-readme          = "README.md"
+readme          = "README_PYPI.md"
 requires-python = ">=3.11"
 license         = { file = "LICENSE" }
 authors         = [
@@ -54,17 +54,23 @@ dependencies = [
 
 [project.optional-dependencies]
 
-# Async — enables uxsp.aio tag (async dispatchers & streaming; built-in to python)
+# ── Core Async (uxsp.aio) ────────────────────────────────────────────────────
+# Built-in to Python stdlib; enables the "aio" extra tag for pip install uxsp[aio]
 aio = []
 
-# Storage Backends
+# ── Storage Backends ─────────────────────────────────────────────────────────
+# pip install uxsp[redis]
 redis    = ["redis >= 4.0.0"]
+# pip install uxsp[postgres]
 postgres = ["psycopg2-binary >= 2.9.0"]
 db       = ["redis >= 4.0.0", "psycopg2-binary >= 2.9.0"]
 
-# Framework Integrations — 1-line middleware & decorators for FastAPI, Django, and Flask
+# ── Web Framework Integrations ───────────────────────────────────────────────
+# pip install uxsp[fastapi]
 fastapi    = ["fastapi >= 0.100.0", "starlette >= 0.27.0", "httpx2 >= 2.12.0"]
+# pip install uxsp[django]
 django     = ["django >= 4.0.0"]
+# pip install uxsp[flask]
 flask      = ["flask >= 2.0.0"]
 frameworks = [
     "fastapi >= 0.100.0",
@@ -74,17 +80,27 @@ frameworks = [
     "flask >= 2.0.0",
 ]
 
-# Framework-Specific Full Stacks (includes framework + redis + postgres)
+# ── Multi-Extra Combinations (supported directly via pip syntax) ─────────────
+# pip install "uxsp[aio, django]"              -> uxsp.secure + uxsp.aio + Django
+# pip install "uxsp[aio, postgres]"            -> uxsp.secure + uxsp.aio + Postgres
+# pip install "uxsp[aio, redis]"               -> uxsp.secure + uxsp.aio + Redis
+# pip install "uxsp[aio, django, postgres]"    -> uxsp.secure + uxsp.aio + Django + Postgres
+# pip install "uxsp[aio, django, redis]"       -> uxsp.secure + uxsp.aio + Django + Redis
+
+# ── Pre-Composed Full Stacks (includes framework + redis + postgres) ─────────
+# pip install uxsp[all-django]
 all-django = [
     "django >= 4.0.0",
     "redis >= 4.0.0",
     "psycopg2-binary >= 2.9.0",
 ]
+# pip install uxsp[all-flask]
 all-flask = [
     "flask >= 2.0.0",
     "redis >= 4.0.0",
     "psycopg2-binary >= 2.9.0",
 ]
+# pip install uxsp[all-fastapi]
 all-fastapi = [
     "fastapi >= 0.100.0",
     "starlette >= 0.27.0",
@@ -93,7 +109,8 @@ all-fastapi = [
     "psycopg2-binary >= 2.9.0",
 ]
 
-# All Optional Dependencies
+# ── All Optional Dependencies ────────────────────────────────────────────────
+# pip install uxsp[all]
 all = [
     "fastapi >= 0.100.0",
     "starlette >= 0.27.0",

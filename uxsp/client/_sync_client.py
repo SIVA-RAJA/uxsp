@@ -29,12 +29,12 @@ from uxsp.transport.http import (
 )
 
 try:
-    import httpx
+    import httpx2 as httpx
 except ImportError:
     try:
-        import httpx2 as httpx
+        import httpx  # type: ignore[no-redef]
     except ImportError:
-        httpx = None
+        httpx = None  # type: ignore[assignment]
 
 
 class UXSPClient:

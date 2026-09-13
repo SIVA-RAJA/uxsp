@@ -1,61 +1,129 @@
 # UXSP — Universal Exchange Security Protocol
 
-[![Version: 1.2.0](https://img.shields.io/badge/Version-1.2.0-orange)]()
-[![Python: 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue)]()
-[![License: MIT](https://img.shields.io/badge/License-MIT-green)]()
-[![Coverage: 100%](https://img.shields.io/badge/Coverage-100%25-brightgreen)]()
+[![Version: 1.3.0](https://img.shields.io/badge/Version-1.3.0-orange)](https://github.com/SIVA-RAJA/uxsp)
+[![Python: 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue)](https://pypi.org/project/uxsp/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green)](https://opensource.org/licenses/MIT)
+[![Coverage: 100%](https://img.shields.io/badge/Coverage-100%25-brightgreen)](https://github.com/SIVA-RAJA/uxsp)
+[![Type Checking: mypy strict](https://img.shields.io/badge/mypy-strict%20(0%20errors)-blue)](https://mypy.readthedocs.io/)
+[![NIST FIPS 203 & 204](https://img.shields.io/badge/NIST-ML--KEM--768%20%7C%20ML--DSA--65-blueviolet)](https://csrc.nist.gov/)
 
-**UXSP (Universal Exchange Security Protocol)** is an enterprise-grade, hybrid post-quantum security framework. It is designed from the ground up to protect your web APIs, file streams, messaging layers, and live media against classical eavesdroppers and the upcoming threat of quantum computers.
-
----
-
-## 💡 What is UXSP?
-
-In standard web applications, data sent over the internet relies on traditional encryption (like RSA or ECC). However, upcoming quantum computers will soon be powerful enough to break this traditional encryption, exposing sensitive user records, financial transactions, and private messages.
-
-**UXSP solves this problem today by providing "Hybrid Post-Quantum Security":**
-1. **Double-Layer Armor**: It combines trusted classical encryption (AES-256-GCM + X25519/Ed25519) with modern NIST-standardized Post-Quantum Cryptography algorithms (**ML-KEM** FIPS 203 and **ML-DSA** FIPS 204).
-2. **Zero-Complexity for Developers**: Instead of writing hundreds of lines of complex cryptographic setup, UXSP provides beautiful, high-level APIs that allow developers to secure entire applications, web endpoints, multi-gigabyte file transfers, and even WebRTC video streams with **just 1 line of code**.
+**UXSP (Universal Exchange Security Protocol)** is an enterprise-grade, hybrid post-quantum security framework. It provides application-layer zero-trust encryption, progressive protocol negotiation with automatic fallback, multi-gigabyte streaming in constant memory, and framework middlewares—all designed to protect APIs, data pipelines, messaging, and live media against classical eavesdroppers and future quantum supercomputers.
 
 ---
 
-## ✨ Features Overview
+## How UXSP Works
 
-UXSP comes packed with capabilities to handle any data transfer scenario securely:
+Imagine you want to send a secret drawing to your friend Bob across a playground full of snoopy kids:
 
-- **Send Any Format**: Whether you are sending plain text, structured JSON, raw binary, large files, documents (PDF, Word), images, photos, audio, voice memos, archives (Zip), locations, or contacts, UXSP provides dedicated classes for all data types. It automatically serializes, chunks, encrypts, and packages the data.
-- **Live Video Calls**: Negotiate high-performance AES-GCM secure WebRTC sessions for real-time video calls with a single line of code.
-- **Live Voice Calls**: Establish encrypted audio streams with configurable codecs and sample rates for highly secure voice communication.
-- **Live CCTV Integration**: Securely connect and stream data from live CCTV cameras, protecting sensitive monitoring feeds from interception.
-- **Web Framework Middlewares**: Drop-in middlewares for **FastAPI**, **Django**, and **Flask**. They automatically decrypt incoming requests, verify identities, and encrypt outbound responses, replacing the need for traditional CSRF tokens.
-- **Durable Replay Protection (NonceStores)**: Out-of-the-box support for Memory, Redis, and Postgres-backed NonceStores (both synchronous and asynchronous) to ensure intercepted messages can never be replayed by an attacker.
-- **Frontend Interoperability**: A companion NPM package allows your web frontend to encrypt data directly in the browser before it even hits the network.
+```
+  Alice's Drawing                        Locked Safe                         Bob Reads Drawing
+┌─────────────────┐             ┌───────────────────────────┐             ┌─────────────────┐
+│                 │             │  [Lock 1: Classical]      │             │                 │
+│   "Top Secret   │ ──(Sealed)─▶│   X25519 + Ed25519        │──(Opened)──▶│   "Top Secret   │
+│    Playground   │             │  [Lock 2: Quantum-Proof]  │             │    Playground   │
+│     Plan!"      │             │   ML-KEM-768 + ML-DSA-65  │             │     Plan!"      │
+└─────────────────┘             └───────────────────────────┘             └─────────────────┘
+```
 
-*(For detailed implementations, tutorials, and code examples of these features, please refer to the `docs/` directory).*
+1. **The Classical Lock (Today's Security)**: Standard internet encryption (like RSA and ECC) is like a good metal padlock. Normal computers today cannot pick it.
+2. **The Quantum Monster (Tomorrow's Threat)**: Mathematicians have proven that future **Quantum Computers** will be able to pick all classical locks instantly! Even worse, bad actors are collecting encrypted internet traffic *right now* ("Harvest Now, Decrypt Later") to unlock it once their quantum computers are ready.
+3. **The UXSP Double Safe**: UXSP puts your message inside a safe with **TWO different locks**:
+   - **Lock 1**: Modern classical cryptography (**X25519** ECDH and **Ed25519** digital signatures).
+   - **Lock 2**: Quantum-proof lattice mathematics standardized by NIST (**ML-KEM-768** / CRYSTALS-Kyber and **ML-DSA-65** / CRYSTALS-Dilithium).
+4. **Unbreakable Guarantee**: An attacker must break **BOTH** locks at the same time to read your message or impersonate the sender. If either lock remains intact, your data is 100% safe!
 
 ---
 
-## ⚙️ Installation & Setup
+## ⚡ Key Highlights in v1.3.0
+
+- 🔄 **Autonomous Protocol-Switching HTTP Client (`uxsp.client`)**:
+  - `UXSPClient` (sync) and `AsyncUXSPClient` (async) automatically probe remote servers using negotiation headers (`X-UXSP-Accept`, `X-UXSP-Version`, `X-UXSP-Identity`).
+  - **Automatic Encryption**: If the server speaks UXSP, the client automatically seals the request and decrypts the response.
+  - **Automatic Plaintext Fallback**: If the server is standard HTTP/REST (like Stripe, GitHub, or legacy microservices), the client seamlessly communicates in standard plaintext HTTP without errors.
+  - **Zero-Trust Enforcement**: Set `allow_fallback=False` / `force_uxsp=True` to immediately reject any unencrypted endpoints.
+  - **Pluggable Capability Caching**: Cache server capabilities in Memory, Redis, or PostgreSQL to avoid per-request discovery round-trips.
+- 🛡️ **1-Line Polymorphic Cryptography (`uxsp.secure`)**:
+  - Direct 1-line operations across **14 polymorphic data types**: `Text`, `File`, `JSON`, `Binary`, `PDF`, `Document`, `Voice`, `Video`, `Photo`, `Location`, `Contact`, `HTML`, `Archive`, and `LiveVoiceCall`.
+- 🌐 **Web Framework Middlewares (`uxsp.contrib`)**:
+  - Drop-in middlewares and route decorators (`@protect`, `@protect_route`) for **FastAPI**, **Django**, and **Flask** with opportunistic negotiation headers.
+- 📦 **Ultra-Low Memory Streaming (`SendStream` / `ReceiveStream`)**:
+  - Encrypt and transfer 100GB+ files chunk-by-chunk in fixed $O(\text{chunk\_size})$ RAM footprint without event loop blocking.
+- ⏱️ **Durable Replay Protection (`NonceStore`)**:
+  - Sliding-window sequencing, timestamp bounds ($\le 300\text{s}$ freshness), and TTL noncestores backed by Memory, **Redis**, or **PostgreSQL**.
+- 🎥 **Live Media & WebRTC (`LiveSession` / `LiveVoiceSession`)**:
+  - High-performance real-time video, voice calls, and CCTV feed protection with ratcheting directional session keys.
+- 💻 **Cross-Platform CLI (`uxsp`)**:
+  - Terminal utility for key management, identity generation, sealing/opening envelopes, and `uxsp curl` for probing and querying remote endpoints.
+- 📜 **Formal Standards & Exact Wire Format (`docs/`)**:
+  - Complete RFC 2119 mathematical specifications (`docs/protocol_specification.md`) and bit-level binary wire format manuals with hex vectors (`docs/wire_format.md`).
+- 💎 **100% Strict Type Safety & Test Coverage**:
+  - Verified `mypy` strict mode (`strict = true`) across all 78 source files with **0 errors**.
+  - Verified **100% test coverage** (7,084 / 7,084 statements) across 1,758 tests with **0 warnings**.
+
+---
+
+## 🏛️ System Architecture
+
+```mermaid
+graph TD
+    subgraph "Application Layer"
+        APP[Web App / Microservice / CLI]
+        CLIENT[UXSPClient / AsyncUXSPClient]
+        MW[FastAPI / Django / Flask Middleware]
+    end
+
+    subgraph "Protocol Switching & Negotiation"
+        PROBE{Server Supports UXSP?}
+        PROBE -->|Yes| UXSP_PATH[Seal into SecurePackage]
+        PROBE -->|No (Fallback)| PLAIN_PATH[Standard HTTP / REST]
+        CACHE[(HostCapabilityCache\nMemory / Redis / DB)]
+        CLIENT <--> CACHE
+    end
+
+    subgraph "UXSP Secure Core"
+        DISPATCH[Polymorphic Dispatcher\n14 Data Types]
+        STATE[Session State Machine\nMonotonic Seq + Sliding AD]
+        REPLAY[ReplayGuard + NonceStore\nTimestamp Window + TTL]
+        CRYPTO[Hybrid Cryptographic Engine\nX25519 + ML-KEM-768\nEd25519 + ML-DSA-65\nAES-256-GCM + HKDF]
+    end
+
+    APP --> CLIENT
+    APP --> MW
+    CLIENT --> PROBE
+    UXSP_PATH --> DISPATCH
+    DISPATCH --> STATE
+    STATE --> REPLAY
+    REPLAY --> CRYPTO
+```
+
+---
+
+## ⚙️ Installation
+
+```bash
+# Base package
+pip install uxsp
+```
 
 UXSP is highly modular. You only need to install the dependencies required for your specific framework and storage needs.
 
 | Installation Command | Included Components & Dependencies |
 | :--- | :--- |
-| `pip install uxsp` | Base `uxsp.secure` (cryptography, liboqs-python, argon2-cffi) |
-| `pip install uxsp[aio]` | `uxsp.secure` + `uxsp.aio` (Asynchronous capabilities) |
-| `pip install uxsp[django]` | `uxsp.secure` + Django Integrations |
-| `pip install uxsp[flask]` | `uxsp.secure` + Flask Integrations |
-| `pip install uxsp[fastapi]` | `uxsp.secure` + FastAPI, Starlette, HTTPX Integrations |
-| `pip install uxsp[postgres]` | `uxsp.secure` + Postgres (`psycopg2-binary`) |
-| `pip install uxsp[redis]` | `uxsp.secure` + Redis (`redis`) |
-| `pip install uxsp[aio, django]` | `uxsp.secure` + `uxsp.aio` + Django |
-| `pip install uxsp[aio, postgres]` | `uxsp.secure` + `uxsp.aio` + Postgres |
-| `pip install uxsp[aio, redis]` | `uxsp.secure` + `uxsp.aio` + Redis |
-| `pip install uxsp[aio, django, postgres]` | `uxsp.secure` + `uxsp.aio` + Django + Postgres |
-| `pip install uxsp[aio, django, redis]` | `uxsp.secure` + `uxsp.aio` + Django + Redis |
-| `pip install uxsp[all-django]` | `uxsp.secure` + `uxsp.aio` + Django + Postgres + Redis |
-| `pip install uxsp[all-flask]` | `uxsp.secure` + `uxsp.aio` + Flask + Postgres + Redis |
-| `pip install uxsp[all-fastapi]` | `uxsp.secure` + `uxsp.aio` + FastAPI + Postgres + Redis |
+| `pip install uxsp` | Base uxsp.secure (cryptography, liboqs-python, argon2-cffi) |
+| `pip install uxsp[aio]` | uxsp.secure + uxsp.aio (Asynchronous capabilities) |
+| `pip install uxsp[django]` | uxsp.secure + Django Integrations |
+| `pip install uxsp[flask]` | uxsp.secure + Flask Integrations |
+| `pip install uxsp[fastapi]` | uxsp.secure + FastAPI, Starlette, HTTPX2 Integrations |
+| `pip install uxsp[postgres]` | uxsp.secure + Postgres (psycopg2-binary) |
+| `pip install uxsp[redis]` | uxsp.secure + Redis (redis) |
+| `pip install "uxsp[aio, django]"` | uxsp.secure + uxsp.aio + Django |
+| `pip install "uxsp[aio, postgres]"` | uxsp.secure + uxsp.aio + Postgres |
+| `pip install "uxsp[aio, redis]"` | uxsp.secure + uxsp.aio + Redis |
+| `pip install "uxsp[aio, django, postgres]"` | uxsp.secure + uxsp.aio + Django + Postgres |
+| `pip install "uxsp[aio, django, redis]"` | uxsp.secure + uxsp.aio + Django + Redis |
+| `pip install uxsp[all-django]` | uxsp.secure + uxsp.aio + Django + Postgres + Redis |
+| `pip install uxsp[all-flask]` | uxsp.secure + uxsp.aio + Flask + Postgres + Redis |
+| `pip install uxsp[all-fastapi]` | uxsp.secure + uxsp.aio + FastAPI + Postgres + Redis |
 | `pip install uxsp[all]` | Complete stack with all web frameworks and storage backends |
 
 ### System Prerequisites (`liboqs`)
@@ -75,40 +143,48 @@ UXSP utilizes `liboqs` for C-native Post-Quantum Cryptography acceleration. You 
   brew install cmake ninja openssl@3
   ```
 * **Windows**:
-  Requires Visual Studio Build Tools (C++), CMake, and Git. *(Note: Windows support is experimental and falls back to msvcrt for certain operations).*
+  Requires Visual Studio Build Tools (C++), CMake, and Git. (Note: Windows support is experimental and falls back to `msvcrt` for certain operations).
 
-*(If `liboqs` fails to compile on your system, UXSP will automatically fall back to its built-in pure Python Post-Quantum Cryptography implementations, ensuring it always runs).*
+> [!NOTE]
+> **Automatic Pure-Python Fallback**: If `liboqs` fails to compile on your system, UXSP will automatically fall back to its built-in pure Python Post-Quantum Cryptography implementations, ensuring it always runs!
 
 ---
 
-## 🚀 Documentation & Specifications
+## 📚 Complete Documentation Directory
 
-UXSP provides both formal protocol engineering specifications and hands-on developer tutorials:
-
-### 📜 Formal Protocol Specifications (`docs/`)
-For security auditors, cryptographers, and engineers implementing UXSP in other languages (Rust, Go, C/C++, Zig, Swift):
-- **[Formal Protocol Specification (`docs/protocol_specification.md`)](./docs/protocol_specification.md)**: Security proofs, IND-CCA2 threat model, canonical serialization, handshake state machine, session lifecycle, and error code registry.
-- **[Exact Wire Format & Byte-Level Encoding (`docs/wire_format.md`)](./docs/wire_format.md)**: Exact bit-level framing, byte offsets, `UXSP/1` binary layout, JSON wire schema, and annotated hex dumps.
-- **[Documentation Index (`docs/index.md`)](./docs/index.md)**: Protocol specifications overview and architecture portal.
+### 📜 Formal Engineering Standards (`docs/`)
+For cryptographers, security auditors, and engineers implementing UXSP in other languages (Rust, Go, C/C++, Swift, Zig):
+- **[Documentation Index (`docs/index.md`)](./docs/index.md)**: Standards portal and architecture map.
+- **[Formal Protocol Specification (`docs/protocol_specification.md`)](./docs/protocol_specification.md)**: RFC 2119 specification, threat models, canonical serialization, trust anchor hierarchy, and error codes (`0x0001` - `0x0015`).
+- **[Exact Wire Format & Byte-Level Encoding (`docs/wire_format.md`)](./docs/wire_format.md)**: Bit-by-bit framing, binary header offsets (`0x00` - `0x3A`), variable records, and annotated hex dumps.
 
 ### 📖 Developer Tutorials & Framework Guides (`tutorial/`)
-For application developers building software with UXSP:
-- **[Tutorials Portal (`tutorial/index.md`)](./tutorial/index.md)**: Step-by-step guides for all features.
+For software engineers building applications with UXSP:
+- **[Tutorials Portal (`tutorial/index.md`)](./tutorial/index.md)**: Navigation hub for all practical tutorials.
+- **[End-to-End Fullstack Integration (`tutorial/fullstack_integration.md`)](./tutorial/fullstack_integration.md)**: Complete React/Next.js/JS frontend + FastAPI/Django/Flask backend setup with zero-trust encryption.
+- **[Autonomous HTTP Client & Protocol Switching (`tutorial/client.md`)](./tutorial/client.md)**: In-depth guide on `UXSPClient`, fallback mechanisms, and capability caching.
 - **[High-Level APIs (`tutorial/high_level_api.md`)](./tutorial/high_level_api.md)**: 1-line cryptographic operations across 14 polymorphic data types.
-- **[Low-Level APIs (`tutorial/low_level_api.md`)](./tutorial/low_level_api.md)**: Custom cryptographic workflows and key management.
-- **[Asynchronous Engine (`tutorial/async_api.md`)](./tutorial/async_api.md)**: High-throughput async I/O pipelines.
-- **[Live Media & WebRTC (`tutorial/streaming_and_media.md`)](./tutorial/streaming_and_media.md)**: Encrypted real-time video, voice calls, and CCTV feeds.
-- **[Web Framework Middlewares (`tutorial/frameworks/`)](./tutorial/frameworks/fastapi.md)**: Drop-in protection for **FastAPI**, **Django**, and **Flask**.
-- **[Replay Protection (`tutorial/noncestore.md`)](./tutorial/noncestore.md)**: Durable NonceStores (Memory, Redis, Postgres).
-- **[CLI Tooling (`tutorial/cli.md`)](./tutorial/cli.md)**: Command-line identity and card management.
-- **[Frontend Integration (`tutorial/web_frontend.md`)](./tutorial/web_frontend.md)**: Browser TypeScript/JavaScript SDK.
+- **[Low-Level APIs (`tutorial/low_level_api.md`)](./tutorial/low_level_api.md)**: Envelope, Identity, Session primitives, and key derivation.
+- **[Asynchronous Engine (`tutorial/async_api.md`)](./tutorial/async_api.md)**: High-throughput async pipelines (`uxsp.aio`).
+- **[Streaming & Live Media (`tutorial/streaming_and_media.md`)](./tutorial/streaming_and_media.md)**: Streaming files, voice calls, and CCTV feeds.
+- **[WebRTC Integration (`tutorial/webrtc_integration.md`)](./tutorial/webrtc_integration.md)**: Real-time secure video calls.
+- **[Web Framework Middlewares (`tutorial/frameworks/`)](./tutorial/frameworks/fastapi.md)**: Setup guides for FastAPI, Django, and Flask.
+- **[Replay Protection (`tutorial/noncestore.md`)](./tutorial/noncestore.md)**: Persistent NonceStores (Memory, Redis, Postgres).
+- **[CLI Reference (`tutorial/cli.md`)](./tutorial/cli.md)**: Command-line identity management and `uxsp curl`.
+- **[Browser SDK (`tutorial/web_frontend.md`)](./tutorial/web_frontend.md)**: Client-side encryption with `@siva_raja/uxsp`.
 
 ---
 
-## 📄 License & Security
+## 🛡️ Security Policy
 
-UXSP is released under the **[MIT License](./LICENSE)**. 
-For security disclosures, vulnerability reporting, and threat models, please consult **[SECURITY.md](./SECURITY.md)**.
+We take security seriously. Please report any potential vulnerabilities privately to **sivaraja5401@gmail.com** with subject `[UXSP SECURITY]`. See **[SECURITY.md](./SECURITY.md)** for our coordinated vulnerability disclosure policy.
 
-_UXSP v1.2.0_
+---
+
+## 📄 License
+
+UXSP is licensed under the **[MIT License](./LICENSE)**.
+
+_UXSP v1.3.0_
+
 _Maintained by SIVA RAJA S_

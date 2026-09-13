@@ -34,10 +34,10 @@ from uxsp.transport.http import (
 )
 
 try:
-    import httpx
+    import httpx2 as httpx
 except ImportError:
     try:
-        import httpx2 as httpx
+        import httpx
     except ImportError:
         httpx = None
 

@@ -69,3 +69,12 @@ def secure_endpoint():
     # this and encrypt it for the client.
     return jsonify({"status": "success", "received": data})
 ```
+
+---
+
+## 4. Automatic Protocol Negotiation & Client Compatibility
+
+`UXSPFlaskMiddleware` supports progressive client negotiation:
+- Probing requests carrying `X-UXSP-Accept` receive `X-UXSP-Version: 1.0, 1.3` headers advertising server capabilities.
+- Unencrypted requests to standard routes continue functioning normally when `require_encryption=False`.
+- The autonomous `UXSPClient`, `AsyncUXSPClient`, and browser `uxspFetch` detect Flask UXSP endpoints automatically and seamlessly seal requests.

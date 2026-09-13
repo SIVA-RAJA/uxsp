@@ -89,3 +89,12 @@ def secure_transfer(request):
 ```
 
 If a hacker tries to send a standard HTTP POST to `/secure_transfer`, the `@protect` decorator will intercept it and throw an error because the request was not encrypted by UXSP.
+
+---
+
+## 4. Automatic Protocol Negotiation & Client Compatibility
+
+`UXSPDjangoMiddleware` automatically handles negotiation headers:
+- Emits `X-UXSP-Version: 1.0, 1.3` and `X-UXSP-Identity` when handling UXSP requests or probing requests (`X-UXSP-Accept`).
+- Unprotected views process standard forms and JSON POST requests seamlessly.
+- Autonomous clients (`UXSPClient`, `AsyncUXSPClient`, and `@siva_raja/uxsp`'s `uxspFetch`) automatically identify Django UXSP endpoints and encrypt payloads without manual configuration.
