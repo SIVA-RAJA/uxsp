@@ -197,7 +197,7 @@ disallow_subclassing_any = false
 
 [tool.pyright]
 include = ["uxsp"]
-exclude = ["**/node_modules", "**/__pycache__"]
+exclude = ["**/node_modules", "**/__pycache__", "**/.*", ".venv"]
 typeCheckingMode = "standard"
 pythonVersion = "3.11"
 pythonPlatform = "Linux"
