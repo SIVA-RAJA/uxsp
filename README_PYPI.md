@@ -28,7 +28,7 @@ An attacker must break **BOTH** locks to read your message or forge your identit
 - **1-Line Polymorphic Cryptography**: 14 built-in polymorphic data types (`Text`, `File`, `JSON`, `Binary`, `PDF`, `Document`, `Voice`, `Video`, `Photo`, `Location`, `Contact`, `HTML`, `Archive`, `LiveVoiceCall`).
 - **Autonomous Protocol-Switching HTTP Client (`UXSPClient` / `AsyncUXSPClient`)**: Talks to UXSP servers with automatic post-quantum encryption; automatically and transparently falls back to standard plaintext HTTP when talking to legacy servers.
 - **Framework Middlewares**: 1-line middlewares and route decorators for **FastAPI**, **Django**, and **Flask** with opportunistic negotiation headers.
-- **Ultra-Low-Memory Streaming**: Stream 100GB+ files chunk-by-chunk with $O(\text{chunk\_size})$ RAM usage.
+- **Ultra-Low-Memory Streaming**: Stream 100GB+ files chunk-by-chunk with `O(chunk_size)` RAM usage.
 - **Distributed Replay Protection**: Nonce tracking and sliding-window sequencing backed by Memory, **Redis**, or **PostgreSQL**.
 - **WebRTC & Live Media**: Real-time voice and video session keys with directional ratchets and monotonic frame counters.
 - **Verified Quality**: **100% test coverage** (7,084 / 7,084 statements) and **zero `mypy` strict errors**.
@@ -390,4 +390,4 @@ Please report suspected security vulnerabilities privately to **sivaraja5401@gma
 
 MIT License — Copyright (c) 2026 SIVA RAJA S.
 
-_UXSP v1.3.0_
+_UXSP v1.3.1_

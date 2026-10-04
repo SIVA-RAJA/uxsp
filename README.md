@@ -1,6 +1,6 @@
 # UXSP — Universal Exchange Security Protocol
 
-[![Version: 1.3.0](https://img.shields.io/badge/Version-1.3.0-orange)](https://github.com/SIVA-RAJA/uxsp)
+[![Version: 1.3.1](https://img.shields.io/badge/Version-1.3.1-orange)](https://github.com/SIVA-RAJA/uxsp)
 [![Python: 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue)](https://pypi.org/project/uxsp/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)](https://opensource.org/licenses/MIT)
 [![Coverage: 100%](https://img.shields.io/badge/Coverage-100%25-brightgreen)](https://github.com/SIVA-RAJA/uxsp)
@@ -34,7 +34,7 @@ Imagine you want to send a secret drawing to your friend Bob across a playground
 
 ---
 
-## ⚡ Key Highlights in v1.3.0
+## ⚡ Key Highlights in v1.3.1
 
 - 🔄 **Autonomous Protocol-Switching HTTP Client (`uxsp.client`)**:
   - `UXSPClient` (sync) and `AsyncUXSPClient` (async) automatically probe remote servers using negotiation headers (`X-UXSP-Accept`, `X-UXSP-Version`, `X-UXSP-Identity`).
@@ -47,13 +47,13 @@ Imagine you want to send a secret drawing to your friend Bob across a playground
 - 🌐 **Web Framework Middlewares (`uxsp.contrib`)**:
   - Drop-in middlewares and route decorators (`@protect`, `@protect_route`) for **FastAPI**, **Django**, and **Flask** with opportunistic negotiation headers.
 - 📦 **Ultra-Low Memory Streaming (`SendStream` / `ReceiveStream`)**:
-  - Encrypt and transfer 100GB+ files chunk-by-chunk in fixed $O(\text{chunk\_size})$ RAM footprint without event loop blocking.
+  - Encrypt and transfer 100GB+ files chunk-by-chunk in a fixed `O(chunk_size)` RAM footprint without event loop blocking.
 - ⏱️ **Durable Replay Protection (`NonceStore`)**:
-  - Sliding-window sequencing, timestamp bounds ($\le 300\text{s}$ freshness), and TTL noncestores backed by Memory, **Redis**, or **PostgreSQL**.
+  - Sliding-window sequencing, timestamp bounds (≤ 300s freshness), and TTL noncestores backed by Memory, **Redis**, or **PostgreSQL**.
 - 🎥 **Live Media & WebRTC (`LiveSession` / `LiveVoiceSession`)**:
   - High-performance real-time video, voice calls, and CCTV feed protection with ratcheting directional session keys.
 - 💻 **Cross-Platform CLI (`uxsp`)**:
-  - Terminal utility for key management, identity generation, sealing/opening envelopes, and `uxsp curl` for probing and querying remote endpoints.
+  - Terminal utility for key management, identity generation, sealing/opening envelopes, and `uxsp client` for probing and querying remote endpoints.
 - 📜 **Formal Standards & Exact Wire Format (`docs/`)**:
   - Complete RFC 2119 mathematical specifications (`docs/protocol_specification.md`) and bit-level binary wire format manuals with hex vectors (`docs/wire_format.md`).
 - 💎 **100% Strict Type Safety & Test Coverage**:
@@ -65,26 +65,26 @@ Imagine you want to send a secret drawing to your friend Bob across a playground
 ## 🏛️ System Architecture
 
 ```mermaid
-graph TD
-    subgraph "Application Layer"
-        APP[Web App / Microservice / CLI]
-        CLIENT[UXSPClient / AsyncUXSPClient]
-        MW[FastAPI / Django / Flask Middleware]
+flowchart TD
+    subgraph AppLayer["Application Layer"]
+        APP["Web App / Microservice / CLI"]
+        CLIENT["UXSPClient / AsyncUXSPClient"]
+        MW["FastAPI / Django / Flask Middleware"]
     end
 
-    subgraph "Protocol Switching & Negotiation"
-        PROBE{Server Supports UXSP?}
-        PROBE -->|Yes| UXSP_PATH[Seal into SecurePackage]
-        PROBE -->|No (Fallback)| PLAIN_PATH[Standard HTTP / REST]
-        CACHE[(HostCapabilityCache\nMemory / Redis / DB)]
+    subgraph ProtoLayer["Protocol Switching & Negotiation"]
+        PROBE{"Server Supports UXSP?"}
+        PROBE -->|"Yes"| UXSP_PATH["Seal into SecurePackage"]
+        PROBE -->|"No (Fallback)"| PLAIN_PATH["Standard HTTP / REST"]
+        CACHE[("HostCapabilityCache<br/>Memory / Redis / DB")]
         CLIENT <--> CACHE
     end
 
-    subgraph "UXSP Secure Core"
-        DISPATCH[Polymorphic Dispatcher\n14 Data Types]
-        STATE[Session State Machine\nMonotonic Seq + Sliding AD]
-        REPLAY[ReplayGuard + NonceStore\nTimestamp Window + TTL]
-        CRYPTO[Hybrid Cryptographic Engine\nX25519 + ML-KEM-768\nEd25519 + ML-DSA-65\nAES-256-GCM + HKDF]
+    subgraph CoreLayer["UXSP Secure Core"]
+        DISPATCH["Polymorphic Dispatcher<br/>14 Data Types"]
+        STATE["Session State Machine<br/>Monotonic Seq + Sliding AD"]
+        REPLAY["ReplayGuard + NonceStore<br/>Timestamp Window + TTL"]
+        CRYPTO["Hybrid Cryptographic Engine<br/>X25519 + ML-KEM-768<br/>Ed25519 + ML-DSA-65<br/>AES-256-GCM + HKDF"]
     end
 
     APP --> CLIENT
@@ -185,6 +185,6 @@ We take security seriously. Please report any potential vulnerabilities privatel
 
 UXSP is licensed under the **[MIT License](./LICENSE)**.
 
-_UXSP v1.3.0_
+_UXSP v1.3.1_
 
 _Maintained by SIVA RAJA S_

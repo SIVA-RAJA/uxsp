@@ -1,87 +1,186 @@
-# Low-Level APIs (Core Concepts)
+# Low-Level APIs & Core Cryptography Guide
 
-While the High-Level APIs (`uxsp.secure`) are all you need for 99% of applications, sometimes you need to get under the hood. This guide explains the core components of UXSP, how they work together, and how you can manually configure them if you need absolute control.
+While the high-level `uxsp.secure` APIs handle 99% of web applications in 1 line of code, the low-level modules (`uxsp.core` and `uxsp.crypto`) provide direct access to the underlying cryptographic primitives, envelope serializers, and handshake state machines.
 
----
+```mermaid
+flowchart TD
+    subgraph CryptoPrims["uxsp.crypto (Cryptographic Primitives)"]
+        HYBRID["Hybrid KEM<br/>X25519 + ML-KEM-768"]
+        DUAL["Dual Signatures<br/>Ed25519 + ML-DSA-65"]
+        AEAD["Symmetric AEAD<br/>AES-256-GCM + HKDF"]
+    end
 
-## 1. How UXSP Actually Works (The Assembly Line)
+    subgraph CoreEngine["uxsp.core (Protocol Engine)"]
+        ENV["Envelope Serialization<br/>JSON Wire / Binary 0x55 0x58 0x53 0x50"]
+        SESS["Session State Machine<br/>Monotonic Counter + Sliding AD"]
+        HS["Handshake Coordinator<br/>HELLO -> ACK -> COMPLETE"]
+    end
 
-When you call `SendText()`, a lot happens behind the scenes. Here is the assembly line:
-
-1.  **Identity Verification**: UXSP checks your private keys and the recipient's public keys.
-2.  **Handshake / Key Exchange**: UXSP generates a completely random, one-time session key. It encrypts this session key using **ML-KEM (Post-Quantum)** and **X25519 (Classical)** public keys of the receiver. This is the "Hybrid" part.
-3.  **Data Serialization**: It converts your text (or JSON, or file) into raw bytes.
-4.  **AES-GCM Encryption**: It encrypts those bytes using the one-time session key and AES-256-GCM.
-5.  **Signing**: It signs the entire package using **ML-DSA (Post-Quantum)** and **Ed25519 (Classical)** so the receiver knows nobody tampered with it.
-6.  **Packaging**: It bundles the encrypted data, the encrypted session key, and the signatures into a `SecurePackage`.
-
-When you use the Low-Level APIs, you can manually intervene at any of these steps!
-
----
-
-## 2. Manual Configuration (`uxsp.core` and `uxsp.crypto`)
-
-If you don't want to use the automatic `SecureContext`, you can manually instantiate and connect the core cryptography modules.
-
-### The Cryptography Engine (`uxsp.crypto`)
-The `uxsp.crypto` module contains the raw algorithms. You can use this to encrypt data manually if you don't want to use the `SecurePackage` format.
-
-```python
-from uxsp.crypto import AESGCMEncryption
-
-# Manually create a 32-byte AES key
-my_secret_key = b"A" * 32 
-
-# Encrypt data manually
-encryptor = AESGCMEncryption(my_secret_key)
-ciphertext, nonce = encryptor.encrypt(b"Top secret data")
-
-# Decrypt data manually
-plaintext = encryptor.decrypt(ciphertext, nonce)
-```
-
-### The KeyStore (`uxsp.storage.keystore`)
-In the high-level API, UXSP stores peer identities in memory by default. In a real production app, you might want to store them in a database. You can manually connect a `KeyStore`.
-
-```python
-from uxsp.storage.keystore import RedisKeyStore
-import redis
-
-# Connect to Redis
-redis_client = redis.Redis(host='localhost', port=6379)
-
-# Create a manual KeyStore
-my_keystore = RedisKeyStore(redis_client)
-
-# Put a card into the store
-my_keystore.put(recipient_public_card)
-
-# Later, you can fetch it manually!
-card = my_keystore.get("recipient_id_123")
+    CryptoPrims --> CoreEngine
+    CoreEngine --> HIGH_LEVEL["uxsp.secure & Middlewares"]
 ```
 
 ---
 
-## 3. Integrating Low-Level and High-Level APIs
+## 1. Direct Hybrid Key Encapsulation (ML-KEM + X25519)
 
-You can easily plug your low-level components (like the `RedisKeyStore`) into the high-level `SecureContext` so that `Send` and `Receive` automatically use your custom database!
+In UXSP, key exchange is double-locked: even if quantum computers crack the elliptic-curve discrete log problem, the ML-KEM-768 lattice protects the master secret.
 
 ```python
-from uxsp.secure import configure, SendText
-from uxsp.storage.keystore import RedisKeyStore
-import redis
+from uxsp.core.identity import Identity
+from uxsp.crypto.hybrid import hybrid_encapsulate, hybrid_decapsulate
 
-# 1. Setup low-level components
-r = redis.Redis(host='localhost')
-custom_keystore = RedisKeyStore(r)
+# 1. Create recipient identity holding hybrid private keys
+bob = Identity.create("Bob", role="SERVER")
+bob_card = bob.public_card()
 
-# 2. Tell the high-level API to use it!
-configure(
-    keystore=custom_keystore,
+# 2. Sender (Alice) performs Hybrid Encapsulation against Bob's PublicCard:
+# Returns:
+# - shared_secret: 32 cryptographically strong bytes derived via HKDF-SHA256
+# - ephemeral_pub: Alice's 32-byte ephemeral X25519 public key
+# - kem_ciphertext: 1088 bytes of ML-KEM-768 ciphertext
+shared_secret_sender, eph_pub, kem_ct = hybrid_encapsulate(bob_card)
+
+print(f"Derived Master Secret (Sender): {shared_secret_sender.hex()[:32]}...")
+print(f"Ephemeral X25519 Key Length  : {len(eph_pub)} bytes")
+print(f"ML-KEM-768 Ciphertext Length : {len(kem_ct)} bytes")
+
+# 3. Recipient (Bob) Decapsulates using his private keys:
+shared_secret_receiver = hybrid_decapsulate(
+    recipient_identity=bob,
+    ephemeral_public_key=eph_pub,
+    kem_ciphertext=kem_ct
 )
 
-# 3. Now, SendText will automatically look up keys in Redis!
-SendText("Hello", receiver_id="friend_id_from_redis")
+assert shared_secret_sender == shared_secret_receiver
+print("Both parties independently derived the IDENTICAL shared secret!")
 ```
 
-This is the true power of UXSP: It gives you the beautiful, easy-to-use 1-line APIs, while allowing you to swap out the complex internal engines (like databases and cache) effortlessly!
+---
+
+## 2. Direct Dual Classical & Post-Quantum Signatures
+
+To ensure authentication and non-repudiation, every envelope is signed twice: once with classical **Ed25519** (RFC 8032) and once with NIST **ML-DSA-65** (FIPS 204).
+
+```python
+from uxsp.core.identity import Identity
+from uxsp.core.signing import DualSigner, DualVerifier
+
+alice = Identity.create("Alice", role="CLIENT")
+message = b"CRITICAL_INSTRUCTION: Approve Transaction #4892"
+
+# 1. Sign with Alice's private keys
+signer = DualSigner(alice)
+signatures = signer.sign(message)
+
+print(f"Ed25519 Signature Length: {len(signatures.classical_signature)} bytes (64B)")
+print(f"ML-DSA-65 Signature Length: {len(signatures.pqc_signature)} bytes (3309B)")
+
+# 2. Verify with Alice's PublicCard
+verifier = DualVerifier(alice.public_card())
+is_valid = verifier.verify(message, signatures)
+print(f"Dual Signature Valid: {is_valid}")
+
+# 3. Tamper detection:
+tampered_message = b"CRITICAL_INSTRUCTION: Approve Transaction #9999"
+assert not verifier.verify(tampered_message, signatures)
+print("Tampered payload successfully rejected!")
+```
+
+---
+
+## 3. Manual Envelope Construction & Serialization
+
+If you are implementing custom binary network protocols (e.g. raw TCP, UDP, or zero-mq sockets), you can construct and serialize the raw `Envelope` directly:
+
+```python
+from uxsp.core.envelope import Envelope
+from uxsp.core.identity import Identity
+from uxsp.crypto.hybrid import hybrid_encapsulate
+from uxsp.crypto.symmetric import aes_gcm_encrypt
+from uxsp.core.signing import DualSigner
+import time
+
+alice = Identity.create("Alice", role="CLIENT")
+bob = Identity.create("Bob", role="SERVER")
+
+# 1. Hybrid Key Exchange
+shared_key, eph_pub, kem_ct = hybrid_encapsulate(bob.public_card())
+
+# 2. Symmetric AEAD Encryption
+plaintext = b'{"command": "REBOOT_NODE", "node_id": "us-east-1"}'
+ciphertext, nonce, tag = aes_gcm_encrypt(key=shared_key, plaintext=plaintext)
+
+# 3. Dual-Sign the ciphertext and metadata
+signer = DualSigner(alice)
+sigs = signer.sign(ciphertext)
+
+# 4. Construct the Envelope
+envelope = Envelope(
+    sender_id=alice.entity_id,
+    recipient_id=bob.entity_id,
+    ephemeral_pub=eph_pub,
+    kem_ciphertext=kem_ct,
+    ciphertext=ciphertext,
+    nonce=nonce,
+    tag=tag,
+    classical_sig=sigs.classical_signature,
+    pqc_sig=sigs.pqc_signature,
+    timestamp=int(time.time()),
+    envelope_nonce=Envelope.generate_nonce()
+)
+
+# Export to JSON Wire Format (application/uxsp+json)
+json_wire_bytes = envelope.to_json_bytes()
+print("JSON Wire Size:", len(json_wire_bytes), "bytes")
+
+# Export to Bit-Level Binary Wire Format (UXSP/1 0x55 0x58 0x53 0x50)
+binary_wire_bytes = envelope.to_binary()
+print("Binary Wire Size:", len(binary_wire_bytes), "bytes")
+```
+
+---
+
+## 4. Low-Level 3-Way Handshake (`HandshakeManager`)
+
+For stateful channels requiring directional session keys and replay sliding windows:
+
+```python
+from uxsp.core.handshake import HandshakeInitiator, HandshakeResponder
+from uxsp.core.identity import Identity
+
+alice = Identity.create("Alice", role="CLIENT")
+bob = Identity.create("Bob", role="SERVER")
+
+# Step 1: Alice creates HELLO frame
+initiator = HandshakeInitiator(alice, bob.public_card())
+hello_frame = initiator.create_hello()
+
+# Step 2: Bob processes HELLO and creates ACK frame
+responder = HandshakeResponder(bob)
+ack_frame = responder.handle_hello(hello_frame)
+
+# Step 3: Alice completes handshake and creates COMPLETE frame
+complete_frame, alice_session = initiator.handle_ack(ack_frame)
+
+# Step 4: Bob finalizes session
+bob_session = responder.handle_complete(complete_frame)
+
+# Both sessions are active with directional keys!
+frame = alice_session.encrypt_data(b"Encrypted live telemetry data")
+recovered = bob_session.decrypt_data(frame)
+print("Recovered live frame:", recovered)
+```
+
+---
+
+## 5. Summary of Core Modules
+
+| Module | Class / Function | Purpose |
+| :--- | :--- | :--- |
+| `uxsp.crypto.hybrid` | `hybrid_encapsulate` | Double-lock KEM (X25519 + ML-KEM-768) |
+| `uxsp.crypto.hybrid` | `hybrid_decapsulate` | Recipient decapsulation & HKDF derivation |
+| `uxsp.core.signing` | `DualSigner`, `DualVerifier` | Ed25519 + ML-DSA-65 simultaneous signing |
+| `uxsp.core.envelope` | `Envelope` | Wire protocol packaging & validation |
+| `uxsp.core.handshake`| `HandshakeInitiator`, `HandshakeResponder` | 3-way mutual authentication state machine |
+| `uxsp.core.session` | `SessionState` | Monotonic sequencing, directional keys, and rekeying |

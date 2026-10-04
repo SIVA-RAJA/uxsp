@@ -6,35 +6,24 @@ It allows applications to communicate securely with UXSP-enabled backends while 
 
 ---
 
-## The Bilingual Messenger
+### The Bilingual Messenger: Progressive Zero-Trust Migration
 
-Imagine you hire a messenger to deliver letters:
-
-```
-                      ┌────────────────────────────────────────┐
-                      │              UXSP Client               │
-                      │         "The Smart Messenger"          │
-                      └──────────────────┬─────────────────────┘
-                                         │
-                    Probes: "Do you speak UXSP Secret Code?"
-                                         │
-                  ┌──────────────────────┴──────────────────────┐
-                  ▼                                             ▼
-       [UXSP-Protected Server]                       [Standard Legacy Server]
-         "Yes, I speak UXSP!"                          "Huh? Standard HTTP only!"
-                  │                                             │
-      (Double-Locked Post-Quantum)                    (Standard Plaintext HTTP)
-                  │                                             │
-                  ▼                                             ▼
-          100% Encrypted Safe                           Standard HTTP Request
-        Zero-Trust Communication                        Zero Code Breakage!
+```mermaid
+flowchart TD
+    Client["UXSP Client\n(Smart Bilingual Transport)"] -->|"Step 1: Probe Host Capabilities\n(X-UXSP-Accept Header)"| RemoteHost{"Target Server Capability"}
+    
+    RemoteHost -->|"Speaks UXSP\n(FastAPI/Django/Flask Middleware)"| EncryptedPath["Post-Quantum Hybrid Tunnel\n(ML-KEM-768 + X25519)"]
+    RemoteHost -->|"Plaintext HTTP Only\n(Stripe, GitHub, Legacy REST)"| FallbackPath["Transparent Plaintext Fallback\n(allow_fallback=True)"]
+    
+    EncryptedPath -->|"Returns SecurePackage\nis_uxsp = True"| AppSecure["Application Layer\n(Zero-Trust Post-Quantum Security)"]
+    FallbackPath -->|"Returns Standard HTTP\nis_uxsp = False"| AppLegacy["Application Layer\n(Zero Code Breakage)"]
 ```
 
-1. **The Problem with "All-or-Nothing" Security**: If you decide to secure your company with quantum-proof encryption, you cannot rewrite all 100 backend services and third-party partner APIs overnight. If your HTTP client only speaks UXSP, all your calls to Stripe, Twilio, or older microservices will crash!
-2. **The Bilingual Messenger (`UXSPClient`)**: The UXSP client visits every server and politely checks: *"Do you speak UXSP Post-Quantum encryption?"*
-   - If the server says **YES**: The client automatically seals the message in a post-quantum double safe (`SecurePackage`) and decrypts the response.
-   - If the server says **NO**: The client gracefully speaks standard HTTP without throwing an error!
-3. **No If/Else Spaghetti**: You don't need to write manual `if server_is_secure: encrypt() else: requests.post()`. The client handles everything transparently.
+1. **The Problem with "All-or-Nothing" Security**: When transitioning an organization to post-quantum zero-trust encryption, rewriting 100 backend services and third-party APIs overnight is impossible. If an HTTP transport strictly enforces UXSP, calls to Stripe, Twilio, or older microservices crash immediately.
+2. **The Bilingual Solution (`UXSPClient`)**: The UXSP client inspects each target host and transparently negotiates capabilities:
+   - If the server supports UXSP: Automatically seals outgoing payloads into a Post-Quantum double envelope (`SecurePackage`) and decrypts incoming responses.
+   - If the server speaks standard HTTP only: Gracefully falls back to standard HTTP without raising errors (`allow_fallback=True`).
+3. **No Conditional Spaghetti**: Eliminates manual `if host_is_secure: encrypt() else: requests.post()` blocks across your microservices codebase.
 
 ---
 
@@ -167,12 +156,11 @@ resp = client.get("https://api.example.com/health", force_plain=True)
 
 Probing a server on every request adds header inspection overhead. UXSP uses pluggable **Capability Caching** so the client remembers whether a host speaks UXSP:
 
-```
-┌─────────────────┐       Cache Hit (Host Known)       ┌────────────────────────┐
-│   UXSP Client   │ ─────────────────────────────────▶ │ Skip Discovery Header  │
-└────────┬────────┘                                    │ Encrypt Directly       │
-         │                Cache Miss (First Visit)     └────────────────────────┘
-         └───────────────────────────────────────────▶ Probe Headers & Store
+```mermaid
+flowchart LR
+    Client["UXSP Client"] --> CacheCheck{"Cache Lookup\n(Host Key)"}
+    CacheCheck -->|"Cache Hit (Host Known Secure)"| FastPath["Direct Request\n(Skip Discovery Headers)"]
+    CacheCheck -->|"Cache Miss (First Contact)"| ProbePath["Probe Discovery Headers\n(X-UXSP-Accept) & Cache Result"]
 ```
 
 ### Supported Cache Backends
@@ -222,7 +210,7 @@ When `UXSPClient` initiates an HTTP request, it automatically includes the follo
 ```http
 POST /api/v1/resource HTTP/1.1
 Host: api.example.com
-User-Agent: UXSP-Client/1.3.0
+User-Agent: UXSP-Client/1.3.1
 X-UXSP-Accept: application/uxsp+json, application/json
 X-UXSP-Version: 1.0, 1.3
 X-UXSP-Identity: eid-client-883a9f
@@ -288,6 +276,67 @@ Both `UXSPClient` and `AsyncUXSPClient` return a unified `UXSPResponse`:
 | `content` | `bytes` | Raw response bytes. |
 | `json()` | `dict \| list` | Parse content as standard JSON (works for both plaintext and decrypted JSON). |
 | `text` | `str` | Raw decoded text string of the response. |
+
+---
+
+## ⚡ Standalone Quick Dispatchers (`uxsp.client.get`, `post`, `put`, `delete`, `patch`)
+
+If you don't need a persistent `with UXSPClient(...)` session context, UXSP provides top-level synchronous convenience dispatchers:
+
+```python
+import uxsp.client as client
+from uxsp import Identity
+
+identity = Identity.create("MobileAppUser")
+
+# 1. Standalone POST request
+resp = client.post(
+    "https://api.mycorp.com/v1/orders",
+    json={"order_id": "ORD-1234"},
+    identity=identity,
+    allow_fallback=True
+)
+print("Decrypted Order Confirmation:", resp.data)
+
+# 2. Standalone GET request
+resp = client.get("https://api.mycorp.com/v1/status", identity=identity)
+print("Server Status Code:", resp.status_code)
+
+# 3. Generic request dispatcher
+resp = client.request("PUT", "https://api.mycorp.com/v1/items/5", json={"qty": 10}, identity=identity)
+```
+- **Line-by-Line Explanation:**
+  - `client.post(...)`: Creates an ephemeral client under the hood, sends the request with discovery headers, and decrypts the response.
+  - `resp.data`: Holds the decrypted Python dictionary if the server is UXSP-enabled, or `None` if plaintext.
+  - `client.request(...)`: Allows dynamic HTTP method dispatching (`GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `OPTIONS`).
+
+---
+
+## 🛡️ Client Exception Handling Reference
+
+The client module raises specific exceptions to protect against downgrade attacks and peer discovery failures:
+
+| Exception Class | Trigger Condition | Recommended Action |
+| :--- | :--- | :--- |
+| `UXSPClientError` | General client failure (transport failure, network error). | Inspect underlying error message and check network connectivity. |
+| `ProtocolFallbackError` | The server responded with plaintext when `force_uxsp=True` or `allow_fallback=False` was configured. | Downgrade attack intercepted! Refuse connection and alert security team. |
+| `UXSPPeerResolutionError` | The client could not resolve the server's public keys during discovery probing. | Ensure the server has a valid PublicCard or serves `/.well-known/uxsp-card`. |
+
+```python
+from uxsp.client import UXSPClient, ProtocolFallbackError, UXSPPeerResolutionError
+from uxsp import Identity
+
+client_ident = Identity.create("SecureAuditor")
+
+# Enforce zero-trust strict mode:
+with UXSPClient(identity=client_ident, force_uxsp=True) as client:
+    try:
+        resp = client.get("https://insecure-api.example.com/sensitive-data")
+    except ProtocolFallbackError:
+        print("Security Alert: Server tried to respond with plaintext! Blocked downgrade attack.")
+    except UXSPPeerResolutionError:
+        print("Discovery Error: Remote host did not provide a valid PublicCard.")
+```
 
 ---
 

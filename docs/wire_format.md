@@ -1,7 +1,7 @@
 # UXSP Exact Wire Format & Byte-Level Encoding Specification
 
 **Status**: Standard  
-**Version**: 1.3.0  
+**Version**: 1.3.1  
 **Date**: September 2026  
 **Document Identifier**: UXSP-WIRE-1.3  
 **Author**: Siva Raja S (<sivaraja5401@gmail.com>)

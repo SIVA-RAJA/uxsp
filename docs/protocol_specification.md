@@ -1,7 +1,7 @@
 # UXSP Formal Protocol Specification
 
 **Status**: Standard  
-**Version**: 1.3.0  
+**Version**: 1.3.1  
 **Date**: September 2026  
 **Document Identifier**: UXSP-SPEC-1.3  
 **Author**: Siva Raja S (<sivaraja5401@gmail.com>)
@@ -160,11 +160,11 @@ Every participant in a UXSP network is represented by a `PublicCard` containing 
 ### 5.2 Trust Anchors & Signed Cards
 For zero-trust environments requiring Public Key Infrastructure (PKI):
 1. A **Trust Anchor** (Root CA) maintains an authoritative Ed25519 + ML-DSA-65 keypair.
-2. The Trust Anchor signs an entity's `PublicCard` payload across a specified validity window ($[T_{\text{not\_before}}, T_{\text{not\_after}}]$) to produce a `SignedCard`.
+2. The Trust Anchor signs an entity's `PublicCard` payload across a specified validity window (`[not_before, not_after]`) to produce a `SignedCard`.
 3. Verifying endpoints MUST reject any `SignedCard` if:
    - The Trust Anchor is not present in the local `TrustStore`.
-   - The current time $T < T_{\text{not\_before}}$ (premature).
-   - The current time $T > T_{\text{not\_after}}$ (expired).
+   - The current time `T < not_before` (premature).
+   - The current time `T > not_after` (expired).
    - The dual classical or post-quantum signature fails verification.
    - `is_revoked` is set to `true`.
 
@@ -215,7 +215,9 @@ For streaming and persistent session channels (`uxsp.core.session`), sequence nu
   - $\text{seq}_{\text{send}}$: Monotonically incremented by 1 for every encrypted frame.
   - $\text{seq}_{\text{recv}}$: Expected incoming sequence number.
 - The sequence number is cryptographically bound into the AEAD Associated Data:
-  $$\text{AD} = \text{session\_id} \parallel \text{":"} \parallel \text{str}(\text{seq})$$
+  ```text
+  AD = session_id || ":" || str(seq)
+  ```
 - Modifying the sequence number in transit causes the AES-256-GCM AEAD authentication tag check to fail.
 
 ### 7.2 Ordering Modes
@@ -247,16 +249,18 @@ The UXSP mutual authentication handshake establishes an encrypted, authenticated
 ```mermaid
 sequenceDiagram
     autonumber
-    participant A as Initiator (Alice)
-    participant B as Responder (Bob)
+    actor A as Initiator (Alice)
+    actor B as Responder (Bob)
 
-    Note over A: 1. Generate Ephemeral X25519 (eph_A)<br/>2. Encapsulate to Bob's ML-KEM pk (kem_A)<br/>3. Sign payload with Ed25519 + ML-DSA
-    A->>B: UXSP-HELLO (session_id, eph_pub_A, kem_ct_A, sigs_A)
+    Note over A: 1. Generate Ephemeral X25519 (eph_A)<br/>2. Encapsulate to Bob ML-KEM pk (kem_A)<br/>3. Dual-Sign with Ed25519 + ML-DSA-65
+    A->>B: Step 1: UXSP-HELLO<br/>(session_id, eph_pub_A, kem_ct_A, dual_signatures)
 
-    Note over B: 1. Verify Timestamp & Nonce<br/>2. Verify Alice's Dual Signatures<br/>3. Decapsulate ML-KEM (derive SS_A)<br/>4. Generate Ephemeral X25519 (eph_B)<br/>5. Encapsulate to Alice's ML-KEM pk (kem_B)<br/>6. Compute HMAC proof over SS_A<br/>7. Sign payload with Ed25519 + ML-DSA
-    B->>A: UXSP-ACK (session_id, eph_pub_B, kem_ct_B, proof, sigs_B)
+    Note over B: 1. Verify Timestamp & Nonce<br/>2. Verify Alice Dual-Signatures<br/>3. Decapsulate ML-KEM to derive SS_A<br/>4. Generate Ephemeral X25519 (eph_B)<br/>5. Encapsulate to Alice ML-KEM pk (kem_B)<br/>6. Compute HMAC proof over SS_A<br/>7. Dual-Sign with Ed25519 + ML-DSA-65
+    B->>A: Step 2: UXSP-ACK<br/>(session_id, eph_pub_B, kem_ct_B, hmac_proof, dual_signatures)
 
-    Note over A: 1. Verify Bob's Dual Signatures<br/>2. Verify HMAC proof of SS_A<br/>3. Decapsulate Bob's ML-KEM (derive SS_B)<br/>4. Combine SS_A + SS_B into Master Key<br/>5. Derive Send/Recv Directional Keys
+    Note over A: 1. Verify Bob Dual-Signatures<br/>2. Verify HMAC proof of SS_A<br/>3. Decapsulate Bob ML-KEM to derive SS_B<br/>4. Combine SS_A + SS_B into K_master<br/>5. Derive Directional Keys (K_A_to_B, K_B_to_A)
+    A->>B: Step 3: UXSP-COMPLETE<br/>(session_id, auth_confirmation)
+
     Note over A,B: Mutual Handshake Complete — Session ACTIVE
 ```
 
@@ -267,7 +271,9 @@ sequenceDiagram
    - $(SS_{\text{kem}, A}, CT_{\text{kem}, A}) = \text{ML-KEM-Encaps}(pk_{\text{kem}, B})$
    - $SS_A = \text{HKDF-Extract-and-Expand}(SS_{\text{ecdh}, A} \parallel SS_{\text{kem}, A}, \text{salt}=pk_{\text{eph}, A}, \text{info}=\text{"UXSP-hybrid-key-exchange-v1"}, L=32)$
 3. Alice builds signable bytes using canonical binding:
-   $$\text{Signable} = \text{bind\_fields}(\text{"UXSP-HELLO"}, \text{versions}, \text{session\_id}, A, B, pk_{\text{eph}, A}, CT_{\text{kem}, A}, \text{timestamp})$$
+   ```text
+   Signable = bind_fields("UXSP-HELLO", versions, session_id, A, B, pk_eph_A, CT_kem_A, timestamp)
+   ```
 4. Alice signs with both Ed25519 and ML-DSA-65.
 5. Alice transmits `UXSP-HELLO` to Bob.
 
@@ -281,7 +287,9 @@ sequenceDiagram
 4. Bob generates an ephemeral contribution directed at Alice:
    - $(sk_{\text{eph}, B}, pk_{\text{eph}, B})$, $CT_{\text{kem}, B}$, and $SS_B$.
 5. Bob computes proof-of-possession HMAC over $SS_A$:
-   $$\text{Proof} = \text{HMAC-SHA256}_{SS_A}(\text{session\_id} \parallel \text{":responder-proof"})$$
+   ```text
+   Proof = HMAC-SHA256(SS_A, session_id || ":responder-proof")
+   ```
 6. Bob builds signable bytes, signs with Ed25519 + ML-DSA-65, and transmits `UXSP-ACK`.
 7. Bob derives final session master key and activates the session.
 
@@ -294,13 +302,23 @@ sequenceDiagram
 ### 8.4 Key Derivation Tree
 The master key is derived by binding both halves with the session metadata:
 
-$$K_{\text{master}} = \text{HKDF-SHA256}\big(SS_A \parallel SS_B, \text{info}=\text{"UXSP-final-session-key:"} \parallel \text{session\_id} \parallel \text{":"} \parallel A \parallel \text{":"} \parallel B, L=32\big)$$
+```text
+K_master = HKDF-SHA256(
+    IKM  = SS_A || SS_B,
+    info = "UXSP-final-session-key:" || session_id || ":" || A || ":" || B,
+    L    = 32
+)
+```
 
 Independent directional keys prevent cross-talk manipulation:
 - **Alice Send Key (Bob Recv Key)**:
-  $$K_{A \to B} = \text{HKDF-SHA256}(K_{\text{master}}, \text{info}=\text{"UXSP-session-key-v1:enc:init_to_resp"}, L=32)$$
+  ```text
+  K_A_to_B = HKDF-SHA256(K_master, info = "UXSP-session-key-v1:enc:init_to_resp", L = 32)
+  ```
 - **Bob Send Key (Alice Recv Key)**:
-  $$K_{B \to A} = \text{HKDF-SHA256}(K_{\text{master}}, \text{info}=\text{"UXSP-session-key-v1:enc:resp_to_init"}, L=32)$$
+  ```text
+  K_B_to_A = HKDF-SHA256(K_master, info = "UXSP-session-key-v1:enc:resp_to_init", L = 32)
+  ```
 
 ---
 

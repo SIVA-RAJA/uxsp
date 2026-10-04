@@ -1,6 +1,6 @@
 # UXSP Developer Tutorials & Guides
 
-Welcome to the official developer tutorials and implementation guides for the **Universal Exchange Security Protocol (UXSP v1.3.0)**.
+Welcome to the official developer tutorials and implementation guides for the **Universal Exchange Security Protocol (UXSP v1.3.1)**.
 
 > 🏛️ **Looking for the Formal Protocol Specification or Exact Wire Format?**  
 > If you are building a custom client in another language (Rust, Go, C++, Zig, Swift), auditing the cryptography, or studying the low-level byte format, see the authoritative formal documentation in **[`docs/`](../docs/index.md)**:
@@ -27,7 +27,7 @@ This tutorial directory is written for developers of all skill levels who want t
 - 🔐 **[High-Level APIs (`uxsp.secure` & `uxsp.aio`)](./high_level_api.md)**
   - Securely send and receive Text, JSON, Files, Images, Videos, Audio, and more with a single line of code.
   - Learn how to manage Identities, when to use the Asynchronous (`aio`) API for high performance, and how to rotate your security keys.
-- 🔄 **[Autonomous HTTP Client (`uxsp.client`)](./client.md)** *(New in v1.3.0)*
+- 🔄 **[Autonomous HTTP Client (`uxsp.client`)](./client.md)** *(New in v1.3.1)*
   - Master progressive zero-trust adoption with `UXSPClient` and `AsyncUXSPClient`.
   - Learn how automatic protocol negotiation probes endpoints, encrypts UXSP traffic, and seamlessly falls back to standard HTTP for legacy services.
   - Configure Redis and Database capability caching to eliminate redundant discovery round-trips.

@@ -37,28 +37,30 @@ If you are an application developer building software with the Python or JavaScr
 ## 🔬 Protocol Architecture Summary
 
 ```mermaid
-graph TD
-    subgraph Identity & Trust Anchor Layer
-        TA[Trust Anchor / Root CA] -->|Signs| SC[Signed PublicCard]
-        PC[PublicCard: X25519 + ML-KEM-768 + Ed25519 + ML-DSA-65]
+flowchart TD
+    subgraph IdentityLayer["Identity & Trust Anchor Layer"]
+        TA["Trust Anchor / Root CA"] -->|"Signs"| SC["Signed PublicCard"]
+        PC["PublicCard: X25519 + ML-KEM-768 + Ed25519 + ML-DSA-65"]
     end
 
-    subgraph Transport & Wire Envelopes
-        ENV[UXSP Sealed Envelope]
-        ENV -->|Binary Wire Format| BIN[UXSP/1 Binary Frame 0x55 0x58 0x53 0x50]
-        ENV -->|JSON Wire Format| JSN[application/uxsp+json Payload]
+    subgraph TransportLayer["Transport & Wire Envelopes"]
+        ENV["UXSP Sealed Envelope"]
+        ENV -->|"Binary Wire Format"| BIN["UXSP/1 Binary Frame (0x55 0x58 0x53 0x50)"]
+        ENV -->|"JSON Wire Format"| JSN["application/uxsp+json Payload"]
     end
 
-    subgraph Cryptographic Core
-        KEM[ML-KEM-768 FIPS 203] + ECDH[X25519 Curve25519] --> HKDF[HKDF-SHA256 Master Key]
-        SIG[ML-DSA-65 FIPS 204] + EDS[Ed25519] --> DUAL[Dual-Layer Authentication]
-        HKDF --> AES[AES-256-GCM AEAD Encryption]
+    subgraph CryptoLayer["Cryptographic Core"]
+        KEM["ML-KEM-768 (FIPS 203)"] --> HKDF["HKDF-SHA256 Master Key"]
+        ECDH["ECDH (X25519 Curve25519)"] --> HKDF
+        SIG["ML-DSA-65 (FIPS 204)"] --> DUAL["Dual-Layer Authentication"]
+        EDS["Ed25519"] --> DUAL
+        HKDF --> AES["AES-256-GCM AEAD Encryption"]
     end
 
-    subgraph State Machines & Guards
-        HS[3-Step Handshake: HELLO -> ACK -> COMPLETE]
-        SESS[Session Manager: Directional Keys + Monotonic Seq]
-        NS[NonceStore: Redis / Postgres / Memory Replay Guard]
+    subgraph StateLayer["State Machines & Guards"]
+        HS["3-Step Handshake: HELLO → ACK → COMPLETE"]
+        SESS["Session Manager: Directional Keys + Monotonic Seq"]
+        NS["NonceStore: Redis / Postgres / Memory Replay Guard"]
     end
 
     PC --> ENV
@@ -73,7 +75,7 @@ graph TD
 
 ## 📌 Document Versioning & Standards Compliance
 
-- **Current Protocol Version**: `UXSP-1` (`UXSP/1.3`, UXSP v1.3.0)
+- **Current Protocol Version**: `UXSP-1` (`UXSP/1.3`, UXSP v1.3.1)
 - **NIST Post-Quantum Standards**:
   - **FIPS 203**: Module-Lattice-Based Key-Encapsulation Mechanism Standard (ML-KEM-768)
   - **FIPS 204**: Module-Lattice-Based Digital Signature Standard (ML-DSA-65)

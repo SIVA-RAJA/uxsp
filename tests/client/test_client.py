@@ -485,6 +485,7 @@ async def test_fastapi_middleware_automatic_fallback_and_uxsp():
     from starlette.requests import Request
     from starlette.responses import JSONResponse
     from starlette.routing import Route
+
     from uxsp.contrib.fastapi import UXSPFastAPIMiddleware
 
     server_ident = await aio.create_identity("ServerAPI")
