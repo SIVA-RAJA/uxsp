@@ -1,5 +1,5 @@
 [build-system]
-requires      = ["setuptools>=68.0.0", "wheel"]
+requires      = ["setuptools>=84.1.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -141,6 +141,7 @@ dev = [
     "ruff            == 0.15.12",
     "bandit          >= 1.7.8",
     "pip-audit       >= 2.7.0",
+    "setuptools      >= 84.1.0",
 ]
 
 # Documentation build.

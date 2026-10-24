@@ -87,6 +87,7 @@ rich==15.0.0
 roman-numerals==4.1.0
 ruff==0.15.12
 SecretStorage==3.5.0
+setuptools==84.2.1
 snowballstemmer==3.0.1
 sortedcontainers==2.4.0
 soupsieve==3.0.4
