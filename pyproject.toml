@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name            = "uxsp"
-version         = "1.3.1"
+version         = "1.3.2"
 description     = "Universal Exchange Security Protocol — Hybrid Post-Quantum Secure Messaging"
 readme          = "README_PYPI.md"
 requires-python = ">=3.11"
@@ -139,6 +139,8 @@ dev = [
     "fakeredis       == 2.35.1",
     "mypy            == 1.20.2",
     "ruff            == 0.15.12",
+    "bandit          >= 1.7.8",
+    "pip-audit       >= 2.7.0",
 ]
 
 # Documentation build.
@@ -174,12 +176,19 @@ line-length    = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "S"]
 ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "uxsp/__init__.py" = ["I001"]
-"tests/*" = ["E402", "SIM117", "E701", "E702", "F811", "F821", "SIM105"]
+"tests/*" = ["E402", "SIM117", "E701", "E702", "F811", "F821", "SIM105", "S101", "S105", "S106", "S110", "S311"]
+
+# ── Bandit (SAST Security Scanner) ──────────────────────────────────────────
+
+[tool.bandit]
+exclude_dirs = ["tests", "docs", "sdks", ".venv"]
+skips = []
+targets = ["uxsp"]
 
 # ── Mypy (type checker) ───────────────────────────────────────────────────────
 

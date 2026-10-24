@@ -1,6 +1,6 @@
 # UXSP Developer Tutorials & Guides
 
-Welcome to the official developer tutorials and implementation guides for the **Universal Exchange Security Protocol (UXSP v1.3.1)**.
+Welcome to the official developer tutorials and implementation guides for the **Universal Exchange Security Protocol (UXSP v1.3.2)**.
 
 > 🏛️ **Looking for the Formal Protocol Specification or Exact Wire Format?**  
 > If you are building a custom client in another language (Rust, Go, C++, Zig, Swift), auditing the cryptography, or studying the low-level byte format, see the authoritative formal documentation in **[`docs/`](../docs/index.md)**:

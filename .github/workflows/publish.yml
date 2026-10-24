@@ -12,10 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source code
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -33,6 +33,10 @@ jobs:
         run: |
           mypy uxsp
 
+      - name: Run Bandit SAST Scanner
+        run: |
+          bandit -c pyproject.toml -r uxsp/
+
   test:
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -43,7 +47,7 @@ jobs:
 
     steps:
       - name: Checkout source code
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Cache liboqs C library
         id: cache-liboqs
@@ -78,7 +82,7 @@ jobs:
           echo "LD_LIBRARY_PATH=$(dirname $SO_PATH):$LD_LIBRARY_PATH" >> $GITHUB_ENV
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
@@ -105,10 +109,10 @@ jobs:
 
     steps:
       - name: Checkout source code
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
@@ -140,17 +144,22 @@ jobs:
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
       github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    environment: npm
     permissions:
       id-token: write
       contents: read
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+          scope: '@siva_raja'
 
       - name: Build JS SDK
         working-directory: sdks/js
@@ -163,8 +172,16 @@ jobs:
         run: |
           npm test
 
-      - name: Publish to npm
+      - name: Publish to npm (Trusted Publishing / OIDC)
         working-directory: sdks/js
-        run: npm publish --provenance --access public
-
-
+        run: |
+          if [ -n "$TOKEN" ]; then
+            echo "Publishing via NPM Token..."
+            export NODE_AUTH_TOKEN="$TOKEN"
+            npm publish --provenance --access public || npm publish --access public
+          else
+            echo "Publishing via npm Trusted Publisher (OIDC)..."
+            npm publish --provenance --access public
+          fi
+        env:
+          TOKEN: ${{ secrets.NPM_TOKEN || secrets.NODE_AUTH_TOKEN }}

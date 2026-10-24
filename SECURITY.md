@@ -157,6 +157,56 @@ upstream update is required.
 
 ---
 
+## Static Application Security Testing (SAST)
+
+UXSP employs multi-layered Static Application Security Testing across both the Python core engine and the TypeScript/JavaScript SDK to enforce secure coding practices and eliminate vulnerabilities before deployment.
+
+### SAST Engines & Scope
+
+| Engine | Scope | Target Weaknesses | Execution Frequency |
+|---|---|---|---|
+| **Bandit** | Python (`uxsp/`) | Cryptographic flaws, injection, insecure deserialization, unsafe I/O | Local pre-commit & CI |
+| **Ruff (`S` rules)** | Python (`uxsp/`, `tests/`) | AST-level security anti-patterns (`flake8-bandit`) | Real-time & CI |
+| **CodeQL** | Python & TypeScript | Deep semantic data-flow and taint analysis, OWASP Top 10 | Pull Requests & Main |
+| **Semgrep** | Polyglot (`uxsp/`, `sdks/js/`) | Custom security rulesets, high-signal vulnerability patterns | CI & Scheduled Cron |
+| **Gitleaks** | Full Git Tree | Secret leakage, hardcoded keys, API tokens, certificates | Pull Requests & Main |
+| **pip-audit / npm audit** | Python & JS Dependencies | Software Supply Chain vulnerabilities (SCA / CVE tracking) | CI & Scheduled Cron |
+
+### Running SAST Locally
+
+Developers must run SAST checks locally prior to opening a pull request. A dedicated runner script is provided:
+
+```bash
+# Run full local SAST suite (Ruff, Bandit, Dependency audit, JS SDK audit)
+./scripts/run_sast.sh
+
+# Run offline/fast check (skips network-dependent dependency audits)
+./scripts/run_sast.sh --skip-deps
+
+# Run Bandit directly with pyproject.toml configuration
+bandit -c pyproject.toml -r uxsp/
+
+# Run Ruff security checks
+ruff check --select S uxsp/
+```
+
+### CI/CD Security Pipeline
+
+Every pull request and push to the `main` branch triggers the automated SAST workflow defined in [`.github/workflows/sast.yml`](.github/workflows/sast.yml).
+
+- **SARIF Integration:** Bandit, Semgrep, and CodeQL results are automatically converted to SARIF format and ingested into GitHub's **Security > Code Scanning Alerts** dashboard.
+- **Fail-Safe Gate:** Any High or Critical SAST finding blocks pull request merging until remediated.
+- **Weekly Cron Audit:** The pipeline executes every Monday at 02:00 UTC to catch newly disclosed CVEs in dependencies even when code has not changed.
+
+### False Positive & Suppression Policy
+
+Security suppressions (`# nosec` or `# noqa: S...`) are treated with extreme rigor:
+1. Every suppression must include an explicit rule identifier (e.g., `# nosec B608  # noqa: S608`).
+2. Every suppression must include an adjacent code comment explaining why the pattern is safe (e.g., `# table validated via regex in __init__`).
+3. Blank `# nosec` without a specific code or explanation is rejected during code review.
+
+---
+
 ## Responsible Disclosure Policy
 
 We follow coordinated disclosure. Once a fix is ready and released:
@@ -171,4 +221,4 @@ researchers acting within this policy.
 
 ---
 
-*Last updated: 2026 — UXSP v1.3.1*
+*Last updated: 2026 — UXSP v1.3.2*

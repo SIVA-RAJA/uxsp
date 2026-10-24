@@ -1,6 +1,6 @@
 # UXSP — Universal Exchange Security Protocol
 
-[![Version: 1.3.1](https://img.shields.io/badge/Version-1.3.1-orange)](https://github.com/SIVA-RAJA/uxsp)
+[![Version: 1.3.2](https://img.shields.io/badge/Version-1.3.2-orange)](https://github.com/SIVA-RAJA/uxsp)
 [![Python: 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue)](https://pypi.org/project/uxsp/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)](https://opensource.org/licenses/MIT)
 [![Coverage: 100%](https://img.shields.io/badge/Coverage-100%25-brightgreen)](https://github.com/SIVA-RAJA/uxsp)
@@ -185,6 +185,6 @@ We take security seriously. Please report any potential vulnerabilities privatel
 
 UXSP is licensed under the **[MIT License](./LICENSE)**.
 
-_UXSP v1.3.1_
+_UXSP v1.3.2_
 
 _Maintained by SIVA RAJA S_

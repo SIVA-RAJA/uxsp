@@ -29,7 +29,7 @@ uxsp version
 ```
 *Expected Output:*
 ```text
-uxsp 1.3.1
+uxsp 1.3.2
 ```
 
 ---

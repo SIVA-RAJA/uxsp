@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.2] - 2026-10-24
+
+### Milestone: Enterprise Static Application Security Testing (SAST), Vulnerability Remediation, and Supply-Chain Hardening
+
+UXSP 1.3.2 introduces full-spectrum **Static Application Security Testing (SAST)** across both the Python core framework and the TypeScript/JavaScript SDK, remediates all upstream supply-chain vulnerabilities, enforces strict URL scheme boundaries for HTTP fallback transports, and maintains verified **100% strict test coverage** across all 7,084 executable statements.
+
+### Added
+- **Multi-Engine SAST Integration**:
+  - **Bandit AST Security Scanner**: Integrated Bandit into developer tooling and CI workflows (`[tool.bandit]` in `pyproject.toml`) targeting injection, weak crypto, and dangerous execution.
+  - **Ruff Security Rules**: Enabled `flake8-bandit` (`S` rule namespace) in `pyproject.toml` with granular per-file rules for test fixtures.
+  - **CI/CD Automated Security Pipeline (`.github/workflows/sast.yml`)**:
+    - GitHub CodeQL semantic data-flow analysis matrix for Python and JavaScript/TypeScript.
+    - Automated Bandit SARIF generation and upload to GitHub Code Scanning dashboard.
+    - Semgrep ruleset scans (`p/security-audit`, `p/owasp-top-ten`, `p/python`, `p/typescript`).
+    - Gitleaks automated secret and private key detection.
+    - Automated `pip-audit` and `npm audit` dependency gates.
+    - Weekly scheduled cron execution (`0 2 * * 1`) to detect newly published CVEs.
+  - **Publish CI Security Gate**: Added Bandit SAST scanner execution to the `lint` stage in [`.github/workflows/publish.yml`](.github/workflows/publish.yml).
+  - **Local SAST Runner Script (`scripts/run_sast.sh`)**: Executable pre-commit script to run Ruff security, Bandit AST analysis, `pip-audit`, and `npm audit` with summary reporting.
+  - **Documented SAST Policy (`SECURITY.md`)**: Detailed multi-engine coverage, local verification commands, and strict suppression review guidelines.
+
+### Changed
+- **URL Scheme Validation & SSRF Hardening**:
+  - `UXSPClient._raw_send` and `AsyncUXSPClient._raw_send` enforce strict `http://` and `https://` prefix validation before passing requests to `urllib.request.urlopen`, preventing unauthorized file or custom scheme access (B310 / S310).
+- **Assertion Hardening**:
+  - Refactored `Envelope.size_bytes` calculation in `uxsp.core.envelope` to eliminate runtime `assert` dependency, guaranteeing identical behavior under optimized Python execution (`-O`) (B101 / S101).
+- **SQL Sanitization Audit**:
+  - Audited `PostgresKeyStore` and `PostgresNonceStore` to verify identifier sanitization (`^[a-zA-Z_][a-zA-Z0-9_]*$`) and parameter binding (B608 / S608).
+- **Dependency Upgrades & Supply-Chain Hardening**:
+  - Upgraded dependencies to eliminate all 16 known vulnerabilities flagged by `pip-audit`:
+    - `certifi`: Updated to `2026.10.23` (PYSEC-2026-4320).
+    - `django`: Updated to `6.1.2` (PYSEC-2026-3717).
+    - `soupsieve`: Updated to `3.0.4` (PYSEC-2026-3071, 3072, 4170, 4171).
+    - `urllib3`: Updated to `2.8.0` (PYSEC-2026-141, 142, 4175, 4176, 4177).
+    - `werkzeug`: Updated to `3.1.9` (PYSEC-2026-4312).
+  - Verified 0 known vulnerabilities across all installed packages.
+- **Test Suite & Full Coverage**:
+  - Added unit test cases for invalid URL scheme rejection in `tests/client/test_client.py`.
+  - Maintained 100% test coverage across all 7,084 executable statements (1,758 tests passing).
+- **Version Bump**: Upgraded package version to `1.3.2`.
+
+---
+
 ## [1.3.1] - 2026-09-12
 
 ### Milestone: Autonomous Protocol Switching Client, Formal RFC Specifications, Exact Wire Framing, and 100% Strict Type Verification

@@ -39,7 +39,7 @@ server_identity = Identity.create("PaymentAPI", role="SERVER")
 # 2. Initialize optional KeyStore for known client cards
 keystore = MemoryKeyStore()
 
-app = FastAPI(title="UXSP Protected API", version="1.3.1")
+app = FastAPI(title="UXSP Protected API", version="1.3.2")
 
 # 3. Add UXSP ASGI Middleware
 app.add_middleware(

@@ -210,7 +210,7 @@ When `UXSPClient` initiates an HTTP request, it automatically includes the follo
 ```http
 POST /api/v1/resource HTTP/1.1
 Host: api.example.com
-User-Agent: UXSP-Client/1.3.1
+User-Agent: UXSP-Client/1.3.2
 X-UXSP-Accept: application/uxsp+json, application/json
 X-UXSP-Version: 1.0, 1.3
 X-UXSP-Identity: eid-client-883a9f

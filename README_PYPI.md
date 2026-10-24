@@ -390,4 +390,4 @@ Please report suspected security vulnerabilities privately to **sivaraja5401@gma
 
 MIT License — Copyright (c) 2026 SIVA RAJA S.
 
-_UXSP v1.3.1_
+_UXSP v1.3.2_

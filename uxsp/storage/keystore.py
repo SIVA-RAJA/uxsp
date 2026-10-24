@@ -756,14 +756,14 @@ class PostgresKeyStore(KeyStore):
                 with active_conn.cursor() as cur:
                     if overwrite:
                         cur.execute(
-                            f"""
+                            f"""  # nosec B608  # noqa: S608  # table validated via regex in __init__
                                 INSERT INTO {self._qtable} (entity_id, card_type, card_json)
                                 VALUES (%s, %s, %s::jsonb)
                                 ON CONFLICT (entity_id) DO UPDATE
                                     SET card_type  = EXCLUDED.card_type,
                                         card_json  = EXCLUDED.card_json,
                                         updated_at = now()
-                                """,
+                                """,  # nosec B608  # noqa: S608
                             (eid, ctype, card_json),
                         )
                     else:
@@ -771,7 +771,7 @@ class PostgresKeyStore(KeyStore):
                             f"""
                                 INSERT INTO {self._qtable} (entity_id, card_type, card_json)
                                 VALUES (%s, %s, %s::jsonb)
-                                """,
+                                """,  # nosec B608  # noqa: S608
                             (eid, ctype, card_json),
                         )
                     active_conn.commit()
@@ -796,7 +796,7 @@ class PostgresKeyStore(KeyStore):
                 conn = active_conn
                 with active_conn.cursor() as cur:
                     cur.execute(
-                        f"SELECT card_json FROM {self._qtable} WHERE entity_id = %s", (entity_id,)
+                        f"SELECT card_json FROM {self._qtable} WHERE entity_id = %s", (entity_id,)  # nosec B608  # noqa: S608
                     )
                     row = cur.fetchone()
                 active_conn.commit()
@@ -824,7 +824,7 @@ class PostgresKeyStore(KeyStore):
             with self._conn() as active_conn:
                 conn = active_conn
                 with active_conn.cursor() as cur:
-                    cur.execute(f"DELETE FROM {self._qtable} WHERE entity_id = %s", (entity_id,))
+                    cur.execute(f"DELETE FROM {self._qtable} WHERE entity_id = %s", (entity_id,))  # nosec B608  # noqa: S608
                     deleted = bool(cur.rowcount > 0)
                     active_conn.commit()
             return deleted
@@ -841,7 +841,7 @@ class PostgresKeyStore(KeyStore):
             with self._conn() as active_conn:
                 conn = active_conn
                 with active_conn.cursor() as cur:
-                    cur.execute(f"SELECT entity_id FROM {self._qtable} ORDER BY created_at")
+                    cur.execute(f"SELECT entity_id FROM {self._qtable} ORDER BY created_at")  # nosec B608  # noqa: S608
                     rows = [row[0] for row in cur.fetchall()]
                 active_conn.rollback()
             return rows

@@ -1,8 +1,8 @@
 # UXSP Formal Protocol Specification
 
 **Status**: Standard  
-**Version**: 1.3.1  
-**Date**: September 2026  
+**Version**: 1.3.2  
+**Date**: October 2026  
 **Document Identifier**: UXSP-SPEC-1.3  
 **Author**: Siva Raja S (<sivaraja5401@gmail.com>)
 

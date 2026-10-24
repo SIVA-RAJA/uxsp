@@ -162,9 +162,11 @@ class UXSPClient:
             return resp.status_code, resp_headers, resp.content
 
         # Fallback to urllib.request
-        req = urllib.request.Request(url, data=content, headers=headers, method=method)
+        if not (url.startswith("http://") or url.startswith("https://")):
+            raise ValueError(f"Unsupported URL scheme in '{url}'. Only HTTP and HTTPS are allowed.")
+        req = urllib.request.Request(url, data=content, headers=headers, method=method)  # nosec B310  # noqa: S310
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as response:
+            with urllib.request.urlopen(req, timeout=timeout) as response:  # nosec B310  # noqa: S310
                 status = response.status
                 r_headers = dict(response.headers.items())
                 body = response.read()

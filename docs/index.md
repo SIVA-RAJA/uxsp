@@ -75,7 +75,7 @@ flowchart TD
 
 ## 📌 Document Versioning & Standards Compliance
 
-- **Current Protocol Version**: `UXSP-1` (`UXSP/1.3`, UXSP v1.3.1)
+- **Current Protocol Version**: `UXSP-1` (`UXSP/1.3`, UXSP v1.3.2)
 - **NIST Post-Quantum Standards**:
   - **FIPS 203**: Module-Lattice-Based Key-Encapsulation Mechanism Standard (ML-KEM-768)
   - **FIPS 204**: Module-Lattice-Based Digital Signature Standard (ML-DSA-65)

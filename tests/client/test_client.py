@@ -841,6 +841,9 @@ def test_urllib_fallback_branches(monkeypatch):
     assert status2 == 404
     assert body2 == b"urllib_404"
 
+    with pytest.raises(ValueError, match="Unsupported URL scheme"):
+        client._raw_send("GET", "ftp://invalid.scheme", {}, None, 5.0)
+
 
 @pytest.mark.asyncio
 async def test_async_urllib_fallback_branches(monkeypatch):
@@ -874,6 +877,9 @@ async def test_async_urllib_fallback_branches(monkeypatch):
     status2, hdrs2, body2 = await client._raw_send("GET", "http://urllib.test", {}, None, 5.0)
     assert status2 == 500
     assert body2 == b"urllib_500"
+
+    with pytest.raises(ValueError, match="Unsupported URL scheme"):
+        await client._raw_send("GET", "ftp://invalid.scheme", {}, None, 5.0)
 
 
 @pytest.mark.asyncio

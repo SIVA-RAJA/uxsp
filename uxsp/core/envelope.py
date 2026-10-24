@@ -403,8 +403,9 @@ class Envelope:
     def size_bytes(self) -> int:
         if self._size_bytes_cache is None:
             raw = self.to_json().encode("utf-8")
-            object.__setattr__(self, "_size_bytes_cache", len(raw))
-        assert self._size_bytes_cache is not None  # narrows type for checkers
+            size = len(raw)
+            object.__setattr__(self, "_size_bytes_cache", size)
+            return size
         return self._size_bytes_cache
 
     # ─────────────────────────────────────────

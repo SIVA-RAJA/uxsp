@@ -394,7 +394,7 @@ class PostgresNonceStore(NonceStore):
                             VALUES (%s, %s)
                             ON CONFLICT (nonce) DO NOTHING
                             RETURNING nonce
-                            """,
+                            """,  # nosec B608  # noqa: S608
                         (nonce, expires),
                     )
                     inserted = bool(cur.fetchone() is not None)
@@ -435,7 +435,7 @@ class PostgresNonceStore(NonceStore):
                         f"""
                                 SELECT 1 FROM {self._qtable}
                                 WHERE nonce = %s AND expires_at > %s
-                                """,
+                                """,  # nosec B608  # noqa: S608
                         (nonce, _dt.now(UTC)),
                     )
                     seen = cur.fetchone() is not None
@@ -455,7 +455,7 @@ class PostgresNonceStore(NonceStore):
                 conn = active_conn
                 with active_conn.cursor() as cur:
                     cur.execute(
-                        f"DELETE FROM {self._qtable} WHERE expires_at < %s", (_dt.now(UTC),)
+                        f"DELETE FROM {self._qtable} WHERE expires_at < %s", (_dt.now(UTC),)  # nosec B608  # noqa: S608
                     )
                     removed = cur.rowcount
                     active_conn.commit()
