@@ -157,9 +157,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
-          scope: '@siva_raja'
+          node-version: '24'
 
       - name: Build JS SDK
         working-directory: sdks/js
@@ -175,12 +173,18 @@ jobs:
       - name: Publish to npm (Trusted Publishing / OIDC)
         working-directory: sdks/js
         run: |
+          # Upgrade npm to latest for full Trusted Publishing (OIDC) support
+          npm install --global npm@latest
+
           if [ -n "$TOKEN" ]; then
             echo "Publishing via NPM Token..."
-            export NODE_AUTH_TOKEN="$TOKEN"
+            echo "//registry.npmjs.org/:_authToken=${TOKEN}" > ~/.npmrc
             npm publish --provenance --access public || npm publish --access public
           else
             echo "Publishing via npm Trusted Publisher (OIDC)..."
+            # Ensure no setup-node or environment tokens interfere with OIDC
+            unset NPM_CONFIG_USERCONFIG
+            unset NODE_AUTH_TOKEN
             npm publish --provenance --access public
           fi
         env:

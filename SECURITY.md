@@ -190,12 +190,28 @@ bandit -c pyproject.toml -r uxsp/
 ruff check --select S uxsp/
 ```
 
+### Running DAST Locally
+
+Dynamic Application Security Testing (DAST) assesses the security posture of running UXSP services against real-time network attacks, replay vectors, malformed payloads, and fuzzing:
+
+```bash
+# Run full local DAST suite (Protocol attack tests + Schemathesis OpenAPI fuzzer)
+./scripts/run_dast.sh
+
+# Run DAST with OWASP ZAP (requires local Docker)
+./scripts/run_dast.sh --zap
+
+# Run Python dynamic attack suite directly
+pytest tests/test_dast_security.py -v
+```
+
 ### CI/CD Security Pipeline
 
-Every pull request and push to the `main` branch triggers the automated SAST workflow defined in [`.github/workflows/sast.yml`](.github/workflows/sast.yml).
-
+Every pull request and push to the `main` branch triggers automated security workflows:
+- **SAST Pipeline ([`.github/workflows/sast.yml`](.github/workflows/sast.yml))**: CodeQL, Bandit, Ruff, Semgrep, Gitleaks, and dependency audits.
+- **DAST Pipeline ([`.github/workflows/dast.yml`](.github/workflows/dast.yml))**: Spins up reference UXSP target server, executes the dynamic attack suite, runs property-based Schemathesis fuzzing, and performs OWASP ZAP API scans.
 - **SARIF Integration:** Bandit, Semgrep, and CodeQL results are automatically converted to SARIF format and ingested into GitHub's **Security > Code Scanning Alerts** dashboard.
-- **Fail-Safe Gate:** Any High or Critical SAST finding blocks pull request merging until remediated.
+- **Fail-Safe Gate:** Any High or Critical SAST/DAST finding blocks pull request merging until remediated.
 - **Weekly Cron Audit:** The pipeline executes every Monday at 02:00 UTC to catch newly disclosed CVEs in dependencies even when code has not changed.
 
 ### False Positive & Suppression Policy

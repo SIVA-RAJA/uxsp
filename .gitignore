@@ -63,6 +63,8 @@ coverage.xml
 pytest_cache/
 pytestdebug.log
 .benchmarks/
+.schemathesis/
+dast-reports/
 
 # Linters, Formatting & Type Checkers
 .mypy_cache/

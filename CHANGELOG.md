@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 UXSP 1.3.2 introduces full-spectrum **Static Application Security Testing (SAST)** across both the Python core framework and the TypeScript/JavaScript SDK, remediates all upstream supply-chain vulnerabilities, enforces strict URL scheme boundaries for HTTP fallback transports, and maintains verified **100% strict test coverage** across all 7,084 executable statements.
 
 ### Added
+
 - **Multi-Engine SAST Integration**:
   - **Bandit AST Security Scanner**: Integrated Bandit into developer tooling and CI workflows (`[tool.bandit]` in `pyproject.toml`) targeting injection, weak crypto, and dangerous execution.
   - **Ruff Security Rules**: Enabled `flake8-bandit` (`S` rule namespace) in `pyproject.toml` with granular per-file rules for test fixtures.
@@ -29,6 +30,7 @@ UXSP 1.3.2 introduces full-spectrum **Static Application Security Testing (SAST)
   - **Documented SAST Policy (`SECURITY.md`)**: Detailed multi-engine coverage, local verification commands, and strict suppression review guidelines.
 
 ### Changed
+
 - **URL Scheme Validation & SSRF Hardening**:
   - `UXSPClient._raw_send` and `AsyncUXSPClient._raw_send` enforce strict `http://` and `https://` prefix validation before passing requests to `urllib.request.urlopen`, preventing unauthorized file or custom scheme access (B310 / S310).
 - **Assertion Hardening**:
@@ -57,6 +59,7 @@ UXSP 1.3.2 introduces full-spectrum **Static Application Security Testing (SAST)
 UXSP 1.3.1 is a landmark release introducing the **Autonomous Protocol Switching Client (`uxsp.client`)**, enabling progressive zero-trust adoption across the web by automatically negotiating post-quantum encryption with UXSP-enabled servers while seamlessly falling back to standard plaintext HTTP for legacy endpoints. This release also introduces publication-grade **RFC 2119 Formal Protocol Specifications**, an **Exact Byte-Level Wire Format Standard**, full strict **`mypy`** type safety (`strict = true`), and verified **100% test coverage** across all 7,084 executable statements with **zero warnings**.
 
 ### Added
+
 - **Autonomous HTTP Client with Protocol Switching (`uxsp.client`)**:
   - `UXSPClient` (synchronous) and `AsyncUXSPClient` (asynchronous) wrapping HTTP transports with automatic protocol probing via `X-UXSP-Accept`, `X-UXSP-Version`, and `X-UXSP-Identity` headers.
   - **Automatic Transparent Encryption**: Seamlessly encrypts outbound payloads into `SecurePackage` envelopes and decrypts inbound responses when communicating with UXSP-capable servers.
@@ -80,6 +83,7 @@ UXSP 1.3.1 is a landmark release introducing the **Autonomous Protocol Switching
   - `tutorial/client.md`: Comprehensive guide detailing automatic protocol switching, caching, and fallback configurations.
 
 ### Changed
+
 - **Documentation Hierarchy Realignment**:
   - Dedicated `tutorial/` directory for developer tutorials and framework integrations.
   - Dedicated `docs/` directory for publication-grade engineering standards and wire formats.
@@ -98,6 +102,7 @@ UXSP 1.3.1 is a landmark release introducing the **Autonomous Protocol Switching
 UXSP 1.2.0 is a massive documentation and developer experience release. Based on user feedback, the entire documentation suite has been rewritten to be perfectly clear, beginner-friendly, and comprehensive without requiring deep cryptographic domain knowledge.
 
 ### Added
+
 - **Comprehensive Documentation Suite (`docs/`)**:
   - Rewritten `index.md` for clear navigation.
   - New `high_level_api.md` covering all 14 `Send*`/`Receive*` polymorphic types, Identity creation, Async (`aio`) usage, key rotation, and multi-gigabyte streaming.
@@ -111,6 +116,7 @@ UXSP 1.2.0 is a massive documentation and developer experience release. Based on
   - Clear distinctions between opportunistic middleware encryption vs. strict enforcement using decorators (`@protect`, `@protect_route`).
 
 ### Changed
+
 - **README.md Overhaul**: Completely rewritten to focus on features, quick installation reference (combinations for frameworks and storage), and system prerequisites.
 - **Version Bump**: Upgraded package version to `1.2.0`.
 

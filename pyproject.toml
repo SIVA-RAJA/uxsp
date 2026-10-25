@@ -109,6 +109,13 @@ all-fastapi = [
     "psycopg2-binary >= 2.9.0",
 ]
 
+# ── Dynamic Application Security Testing (DAST) ──────────────────────────────
+# pip install uxsp[dast]
+dast = [
+    "uvicorn >= 0.28.0",
+    "schemathesis >= 3.25.0",
+]
+
 # ── All Optional Dependencies ────────────────────────────────────────────────
 # pip install uxsp[all]
 all = [
@@ -141,6 +148,8 @@ dev = [
     "ruff            == 0.15.12",
     "bandit          >= 1.7.8",
     "pip-audit       >= 2.7.0",
+    "uvicorn         >= 0.28.0",
+    "schemathesis    >= 3.25.0",
     "setuptools      >= 84.1.0",
 ]
 
